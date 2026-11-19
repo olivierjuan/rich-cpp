@@ -25,11 +25,10 @@ int main() {
     
     Console console;
     
-    // Demonstrate pipe composition
-    // Text is implicitly convertible to AnyRenderable
+    // Demonstrate pipe composition with Options
     auto content = AnyRenderable(StyledText{"[bold][red]Hello[/red][/bold] from [green]C++ Rich![/green]"});
     
-    console.print(content | pad(1) | panel("Demo"));
+    console.print(content | pad(1) | panel({.title="Demo", .show_border=true}));
     
     return 0;
 }

@@ -24,7 +24,9 @@ struct RICH_EXPORT Segment {
     Style style;
 };
 
-struct Options {};
+struct Options {
+    bool show_border{true};
+};
 class Console;
 
 template<class T, class C, class Opt>
