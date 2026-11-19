@@ -17,7 +17,7 @@ This document outlines the phased development of a C++ port of the Rich library,
 
 - [x] **Markup Parser**: Integrate with `std::format` to support `[bold red]text[/]`.
 - [x] **Text Primitives**: Implement `Text` renderable with integrated markup parsing.
-- [ ] **Unicode Handling**: Integrate `utf8proc` for cell-width and grapheme cluster support (critical for layout alignment).
+- [x] **Unicode Handling**: Integrate `utf8proc` for cell-width and grapheme cluster support (critical for layout alignment).
 - [ ] **Designated Initializers API**: Add `Options` structs for widgets to improve configurability without fluent verbosity.
 
 ## Phase 3: Layout & Widgets (Structural Composition)

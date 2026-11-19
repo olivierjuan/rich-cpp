@@ -3,6 +3,8 @@
 #include <algorithm>
 namespace rich::panel {
 
+namespace rich::panel {
+
 class Panel {
 public:
     Panel(rich::AnyRenderable inner, std::string title) : inner_(std::move(inner)), title_(std::move(title)) {}

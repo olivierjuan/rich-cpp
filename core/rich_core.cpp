@@ -1,6 +1,8 @@
 #include "rich_core.h"
 namespace rich {
 
+namespace rich {
+
 void Console::print(const AnyRenderable& ar) {
     auto segments = ar.render(*this, Options{});
     for (const auto& s : segments) {

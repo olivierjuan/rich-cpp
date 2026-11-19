@@ -10,6 +10,8 @@
 #include <iostream>
 namespace rich {
 
+namespace rich {
+
 struct Style {
     bool bold{false};
     bool red{false};

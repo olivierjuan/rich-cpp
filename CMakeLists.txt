@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 project(rich LANGUAGES CXX VERSION 0.0.1)
 set(RICH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
+set(RICH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+
 # Core library
 add_library(rich_core SHARED core/rich_core.cpp)
 target_include_directories(rich_core PUBLIC ${RICH_ROOT}/core)
