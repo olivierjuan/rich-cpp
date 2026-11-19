@@ -26,7 +26,7 @@ This document outlines the phased development of a C++ port of the Rich library,
 - [x] **Layout Engines**: Implement `Columns` and `Layout` (calculating widths/heights based on `Measure`).
 - [x] **Table Widget**: Port Rich’s width-distribution algorithm (Table/Column/Row).
 - [x] **Border & Padding**: Implement `Panel`, `Rule`, `Padding` as renderable decorators (using the pipe `|` composition model).
-- [ ] **Oracle Validation**: Establish a testing suite that compares output bytes against Rich (Python) output for identical inputs.
+- [x] **Oracle Validation**: Establish a testing suite that compares output bytes against Rich (Python) output for identical inputs.
 
 ## Phase 4: Live & Advanced (Dynamic Content)
 *Goal: Support dynamic terminal updates.*
