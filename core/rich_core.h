@@ -10,13 +10,42 @@
 #include <iostream>
 namespace rich {
 #include <utility>
+#include <cstdint>
 
 namespace rich {
 
-struct Style {
+struct RICH_EXPORT Color {
+    enum class Type { None, Standard, Rgb };
+    Type type{Type::None};
+    uint8_t r{0};
+    uint8_t g{0};
+    uint8_t b{0};
+    uint8_t ansi{0};
+
+    static constexpr Color from_ansi(uint8_t code) {
+        Color c;
+        c.type = Type::Standard;
+        c.ansi = code;
+        return c;
+    }
+    static constexpr Color rgb(uint8_t red, uint8_t green, uint8_t blue) {
+        Color c;
+        c.type = Type::Rgb;
+        c.r = red; c.g = green; c.b = blue;
+        return c;
+    }
+    constexpr bool operator==(const Color&) const = default;
+};
+
+struct RICH_EXPORT Style {
     bool bold{false};
-    bool red{false};
-    bool green{false};
+    bool dim{false};
+    bool italic{false};
+    bool underline{false};
+    bool reverse{false};
+    Color color;
+    Color bg_color;
+
     constexpr bool operator==(const Style&) const = default;
 };
 
@@ -82,6 +111,8 @@ class RICH_EXPORT Console {
 public:
     explicit Console(std::ostream& os = std::cout) noexcept : os_(os) {}
     void print(const AnyRenderable& ar);
+    void print(std::string_view markup_text);
+    void rule(std::string_view title = "");
 private:
     std::ostream& os_;
 };
@@ -95,9 +126,10 @@ AnyRenderable operator|(AnyRenderable lhs, F&& rhs) {
 // Text primitive
 struct Text {
     std::string content;
+    Style style;
 };
 inline std::vector<Segment> render_item(const Text& t, const Console&, const Options&) {
-    return {{t.content, {}}};
+    return {{t.content, t.style}};
 }
 inline std::pair<size_t, size_t> measure_item(const Text& t, const Console&, const Options&) {
     return {t.content.size(), 1};
@@ -114,5 +146,13 @@ inline std::vector<Segment> render_item(const StyledText& t, const Console&, con
 inline std::pair<size_t, size_t> measure_item(const StyledText& t, const Console&, const Options&) {
     return {t.content.size(), 1};
 }
+
+// Rule primitive
+struct Rule {
+    std::string title;
+    std::string style_tag{"dim"};
+};
+RICH_EXPORT std::vector<Segment> render_item(const Rule& r, const Console& c, const Options& o);
+RICH_EXPORT std::pair<size_t, size_t> measure_item(const Rule& r, const Console& c, const Options& o);
 
 } // namespace rich

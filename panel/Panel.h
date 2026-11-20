@@ -3,6 +3,7 @@
 #include <algorithm>
 namespace rich::panel {
 #include <string>
+#include <sstream>
 
 namespace rich::panel {
 
@@ -43,27 +44,87 @@ public:
         for (const auto& s : inner_segs) {
             inner_text_len += s.text.size();
         }
+        rich::Style border_style{.dim = true, .color = rich::Color::from_ansi(90)};
 
         if (options_.show_border) {
             out.push_back({"│ ", {}});
+            std::string top = "╭─ ";
+            if (!options_.title.empty()) top += options_.title + " ";
+            top += repeat_utf8("─", border_dashes) + "╮\n";
+            out.push_back({std::move(top), border_style});
         }
         for (auto& s : inner_segs) {
             out.push_back(std::move(s));
+
+        auto inner_segs = inner_.render(con, opt);
+
+        // Group inner segments by line
+        std::vector<std::vector<rich::Segment>> lines;
+        lines.emplace_back();
+
+        for (const auto& s : inner_segs) {
+            size_t start = 0;
+            while (start < s.text.size()) {
+                size_t nl = s.text.find('\n', start);
+                if (nl == std::string::npos) {
+                    lines.back().push_back({s.text.substr(start), s.style});
+                    break;
+                } else {
+                    lines.back().push_back({s.text.substr(start, nl - start), s.style});
+                    lines.emplace_back();
+                    start = nl + 1;
+                }
+            }
         }
-        if (options_.show_border) {
+
             size_t inner_space = (w >= 2) ? (w - 2) : 0;
             size_t pad = (inner_space >= inner_text_len) ? (inner_space - inner_text_len) : 0;
             out.push_back({std::string(pad, ' ') + " │\n", {}});
             out.push_back({"╰" + repeat_utf8("─", inner_space + 2) + "╯\n", {}});
+        size_t inner_box_width = (w >= 2) ? (w - 2) : 0;
+
+        for (const auto& line : lines) {
+            size_t line_len = 0;
+            for (const auto& seg : line) line_len += seg.text.size();
+
+            if (options_.show_border) out.push_back({"│ ", border_style});
+            for (const auto& seg : line) out.push_back(seg);
+
+            if (options_.show_border) {
+                size_t pad = (inner_box_width > line_len) ? (inner_box_width - line_len) : 0;
+                out.push_back({std::string(pad, ' ') + "│\n", border_style});
+            } else {
+                out.push_back({"\n", {}});
+            }
+        }
+
+        if (options_.show_border) {
+            std::string bot = "╰" + repeat_utf8("─", inner_box_width + 1) + "╯\n";
+            out.push_back({std::move(bot), border_style});
         }
 
         return out;
     }
 
     std::pair<size_t, size_t> measure(const rich::Console& con, const rich::Options& opt) const {
-        auto [iw, ih] = inner_.measure(con, opt);
-        size_t inner_w = std::max(iw, options_.title.size() + 2);
-        return {inner_w + 4, ih + 2};
+        auto inner_segs = inner_.render(con, opt);
+        size_t max_line = 0;
+        size_t current = 0;
+        size_t line_count = 1;
+        for (const auto& s : inner_segs) {
+            for (char c : s.text) {
+                if (c == '\n') {
+                    max_line = std::max(max_line, current);
+                    current = 0;
+                    ++line_count;
+                } else {
+                    ++current;
+                }
+            }
+        }
+        max_line = std::max(max_line, current);
+        size_t width = std::max(max_line + 4, options_.title.size() + 6);
+        return {width, line_count + 2};
     }
 
 private:
