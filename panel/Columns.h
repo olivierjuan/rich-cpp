@@ -6,6 +6,36 @@
 
 namespace rich::decorator {
 
+namespace {
+// Calculate visual cell width: handles standard ASCII, basic box chars, and multi-byte UTF-8
+inline size_t visual_width(std::string_view sv) {
+    size_t width = 0;
+    size_t i = 0;
+    while (i < sv.size()) {
+        unsigned char c = static_cast<unsigned char>(sv[i]);
+        if (c < 0x80) {
+            ++width;
+            ++i;
+        } else if ((c & 0xE0) == 0xC0) {
+            // 2-byte UTF-8 (e.g. ², é, à) -> 1 cell width
+            ++width;
+            i += 2;
+        } else if ((c & 0xF0) == 0xE0) {
+            // 3-byte UTF-8 (e.g. ╭, ─, ╮, │, ╰, ╯) -> 1 cell width
+            ++width;
+            i += 3;
+        } else if ((c & 0xF8) == 0xF0) {
+            // 4-byte UTF-8 (e.g. emoji) -> 2 cell widths
+            width += 2;
+            i += 4;
+        } else {
+            ++i;
+        }
+    }
+    return width;
+}
+} // namespace
+
 class Columns {
 public:
     Columns(std::vector<rich::AnyRenderable> renderables, size_t spacing = 2)
@@ -47,7 +77,7 @@ public:
             size_t max_w = 0;
             for (const auto& ln : lines) {
                 size_t w = 0;
-                for (const auto& seg : ln) w += seg.text.size();
+                for (const auto& seg : ln) w += visual_width(seg.text);
                 max_w = std::max(max_w, w);
             }
 
@@ -66,12 +96,12 @@ public:
 
                 if (line_idx < item_lines.size()) {
                     for (const auto& seg : item_lines[line_idx]) {
-                        printed_w += seg.text.size();
+                        printed_w += visual_width(seg.text);
                         out.push_back(seg);
                     }
                 }
 
-                // Pad out to item_widths[item_idx]
+                // Pad out to item_widths[item_idx] in visible column cells
                 if (printed_w < item_widths[item_idx]) {
                     out.push_back({std::string(item_widths[item_idx] - printed_w, ' '), {}});
                 }
