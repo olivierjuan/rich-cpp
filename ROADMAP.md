@@ -1,50 +1,145 @@
-# C++ Rich Library Roadmap
+# C++ Rich Library Pragmatic Roadmap
 
-This document outlines the phased development of a C++ port of the Rich library, adhering to the architecture and design guidelines established for a consistent, user-friendly, and maintainable library.
+This document structures the roadmap for **Rich C++** by **complexity vs. value tiers**, enabling modular development without forcing heavy third-party dependencies unless explicitly desired.
 
-## Phase 1: Core Foundation (The Immutable Kernel)
-*Goal: Establish the absolute minimal core that validates the architecture (Concept/Type-Erasure/Console).*
+```mermaid
+graph TD
+    Tier1["Tier 1: Core Essentials & Zero-Dep Polish (High Value, Zero Deps)"] --> Tier2["Tier 2: Advanced Visual Layout (High Value, Low Complexity)"]
+    Tier2 --> Tier3["Tier 3: Dynamic & Live Updates (Interactive, Threading)"]
+    Tier3 -.-> Tier4["Tier 4: Heavy Ecosystem Modules (Optional / Heavy Deps)"]
+```
 
-- [x] **Project Structure**: CMake setup with shared library core.
-- [x] **Basic Types**: `Color`, `Style`, `Segment` (immutable values).
-- [x] **Renderable Concept**: C++20 concept for ADL-based extensibility.
-- [x] **Type Erasure**: `AnyRenderable` wrapper for composable nesting.
-- [x] **Minimal Console**: Interface for writing `Segments` to output.
-- [x] **Demonstrator**: Minimal `Panel` widget to validate the composition model.
+---
 
-## Phase 2: Core UX (The "Fluent + Markup" API)
-*Goal: Make the library usable for daily styling and text rendering.*
+## Current Status Overview
 
-- [x] **Markup Parser**: Integrate with `std::format` to support `[bold red]text[/]`.
-- [x] **Text Primitives**: Implement `Text` renderable with integrated markup parsing.
-- [x] **Unicode Handling**: Integrate `utf8proc` for cell-width and grapheme cluster support (critical for layout alignment).
-- [x] **Designated Initializers API**: Add `Options` structs for widgets to improve configurability without fluent verbosity.
+| Tier | Focus | Dependencies | Status |
+| :--- | :--- | :--- | :---: |
+| **Tier 0** | Architectural Kernel & Basic Widgets | 0 (Pure C++20) | ✅ **Completed & Validated** |
+| **Tier 1** | Core Polish & Text Foundations | 0 (Pure C++20) | 🟡 **Next Up** |
+| **Tier 2** | Advanced Visual Layout (Tree, Align, Split Grid) | 0 (Pure C++20) | 📋 **Planned** |
+| **Tier 3** | Dynamic & Live Displays (Progress Bars, Spinners) | 0 (`std::jthread` / VT escapes) | 📋 **Planned** |
+| **Tier 4** | Heavy Ecosystem Modules (Markdown, Highlighting, Stacktrace) | Optional 3rd-party (`md4c`, `cpptrace`) | ⚠️ **Optional / Deferrable** |
 
-## Phase 3: Layout & Widgets (Structural Composition)
-*Goal: Support complex layouts.*
+---
 
-- [x] **Layout Engines**: Implement `Columns` and `Layout` (calculating widths/heights based on `Measure`).
-- [x] **Table Widget**: Port Rich’s width-distribution algorithm (Table/Column/Row).
-- [x] **Border & Padding**: Implement `Panel`, `Rule`, `Padding` as renderable decorators (using the pipe `|` composition model).
-- [x] **Oracle Validation**: Establish a testing suite that compares output bytes against Rich (Python) output for identical inputs.
+## Tier 0: Architectural Kernel & Proof-of-Concept *(Completed)*
+*Goal: Prove the C++20 concept, type erasure, and exact layout match against Python Rich.*
 
-## Phase 4: Live & Advanced (Dynamic Content)
-*Goal: Support dynamic terminal updates.*
+- [x] **Renderable Concept & AnyRenderable**: C++20 ADL customization points (`render_item`, `measure_item`) with value-semantic type erasure.
+- [x] **Core Primitives**: `Segment`, `Style` (16 ANSI colors, bright variants, bold, dim, italic, underline, reverse, RGB), `Color`.
+- [x] **Console**: `Console::print`, `Console::rule`, `Console::export_text`, record mode buffer, automatic Windows `CP_UTF8` and VT processing initialization.
+- [x] **Containers & Decorators**:
+  - `Panel` with centered title, custom borders, multiline support.
+  - `Table` with multi-column grid, Unicode box drawing, column justification.
+  - `Columns` with multi-row wrapping and independent left-aligned lines.
+  - `Padding` with pipe operator (`|`) composition.
+- [x] **Automated Oracle Test Suite**: `tests/verify_oracle.py` running byte-for-byte binary comparison against Python Rich for identical layouts (5/5 tests passing).
 
-- [x] **Live/Progress/Status**: Implement `std::jthread`-based refresh loop with thread-safe output flushing.
-- [x] **Platform Shim**: Native VT enablement for Windows/Unix.
+---
 
-## Phase 5: Optional Modules (Ecosystem Integration)
-*Goal: Separate concerns for minimal core impact.*
+## Tier 1: Core Essentials & Zero-Dep Polish *(High Value, Zero Dependencies)*
+*Goal: Make the library completely robust for standard CLI tool output with zero external dependencies.*
 
-- [x] **Markdown**: Integrate `md4c` as a standalone CMake target.
-- [x] **Tracebacks**: Integrate `cpptrace` or `std::stacktrace` for pretty error handling.
-- [x] **Syntax Highlighting**: Implement pluggable highlighter interface (e.g., regex-based or tree-sitter integration).
-## Phase 6: Ecosystem & Adoption (The Polish)
-*Goal: Enable reliable downstream adoption and long-term maintainability.*
+### 1.1 Terminal Dimensions & Stream Detection
+- [ ] **Auto Terminal Width**:
+  - Windows: Query `GetConsoleScreenBufferInfo` for active window column count.
+  - POSIX: Query `ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws)`.
+  - Fallback: Default to 80 columns when redirected to a pipe or file (`isatty`).
+- [ ] **NO_COLOR & Color Detection**:
+  - Respect `NO_COLOR` environment variable (https://no-color.org).
+  - Inspect `COLORTERM` (for truecolor / 24-bit support) and `TERM`.
+### 1.2 Text Wrapping & Justification (`rich::Text`)
+- [ ] **Word Wrapping Engine**:
+  - Soft-wrap text streams at whitespace boundaries to fit within specified console widths.
+  - Support `Overflow::Fold`, `Overflow::Crop`, and `Overflow::Ellipsis` (`...`).
+- [ ] **Text Alignment**:
+  - Add text justification modes: `Justify::Left`, `Justify::Center`, `Justify::Right`, `Justify::Full`.
 
-- [x] **Documentation**: API reference (e.g., Doxygen) and "Getting Started" tutorials.
-- [x] **Examples**: Comprehensive `examples/` demonstrating real-world usage (e.g., dashboard, log viewer).
-- [x] **CI/CD**: Automated testing pipeline for multiple platforms (Windows/Linux/macOS) and compiler versions.
-- [x] **Package Management**: First-class support for `vcpkg`, `Conan`, and `CPM.cmake` for seamless integration.
-- [x] **Performance**: Micro-benchmarks for `render` and `measure` loops to ensure high-frequency updates remain performant.
+### 1.3 Box Style Library (`rich::box`)
+- [ ] **Box Presets**:
+  - `box::ROUNDED` (current default: `╭─╮│╰─╯`)
+  - `box::SQUARE` (`┌─┐│└─┘`)
+  - `box::HEAVY` (`┏━┓┃┗━┛`)
+  - `box::DOUBLE` (`╔═╗║╚═╝`)
+  - `box::ASCII` (`+-+|+-+`)
+  - `box::MINIMAL` (no vertical outer borders)
+- [ ] **Configurable Borders**: Allow passing `{.box = box::DOUBLE}` to `Panel` and `Table`.
+
+### 1.4 Oracle Parity Validation
+- [ ] Add Oracle test cases for:
+  - `box_styles`: Comparing Table and Panel with each box preset against Python Rich.
+  - `text_wrap`: Comparing soft-wrapped paragraphs against Python Rich text wrapping.
+
+---
+
+## Tier 2: Advanced Visual Layout *(High Value, Low Complexity, Zero Dependencies)*
+*Goal: Deliver full visual dashboard and structural composition capabilities.*
+
+### 2.1 `Tree` Widget (`rich::tree::Tree`)
+- [ ] Hierarchical data visualization with guide characters (`├── `, `└── `, `│   `).
+- [ ] Arbitrary renderables as node labels (allowing nested Panels or Tables inside Tree branches).
+- [ ] Expandable and collapsible representation.
+
+### 2.2 `Align` & `Constrain` Decorators
+- [ ] `Align`: Wrapper to horizontally center, left-align, or right-align any renderable within target width.
+  - Syntax: `panel(...) | align(Justify::Center)`
+- [ ] `Constrain`: Clamp maximum width of any nested renderable.
+  - Syntax: `table | constrain(60)`
+
+### 2.3 `Layout` Engine (Flexible Grid Splits)
+- [ ] Split screen into sub-regions:
+  - `layout.split_row(...)` (horizontal division).
+  - `layout.split_column(...)` (vertical division).
+  - Proportional sizing via `ratio` (e.g. 1:2 split).
+  - Fixed-size constraints (`size = 10`).
+
+### 2.4 Oracle Parity Validation
+- [ ] Add Oracle test cases for `tree_basic` and `layout_split`.
+
+---
+
+## Tier 3: Dynamic & Live Displays *(Interactive, Self-Contained)*
+*Goal: Support in-place terminal redraws, progress bars, and status spinners.*
+
+### 3.1 Smooth Progress Bar (`rich::progress`)
+- [ ] Smooth fractional block characters: `█`, `▉`, `▊`, `▋`, `▌`, `▍`, `▎`, `▏`, `░`.
+- [ ] Standard progress bar columns:
+  - Task description.
+  - Progress bar track.
+  - Percentage completed (`[ 75%]`).
+  - Transfer speed & ETA estimator.
+- [ ] Fluent range tracking adapter: `for (auto& item : items | track("Processing")) { ... }`.
+
+### 3.2 Live Display Engine (`rich::live`)
+- [ ] In-place screen redraw using VT cursor repositioning escapes (`\x1b[<N>F` move up lines, `\x1b[0J` clear down).
+- [ ] Atomic screen flush via mutex to prevent output tearing.
+- [ ] Background refresh loop driven by `std::jthread`.
+
+### 3.3 Status Spinner (`rich::status`)
+- [ ] Indeterminate loading spinners using animated Braille frames (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`).
+
+---
+
+## ⚠️ Tier 4: Heavy Ecosystem Modules *(Optional / Deferrable)*
+*Goal: Provide specialized document rendering or introspection only if strictly needed.*
+*Note: Stop before this tier if zero-dependency and lightweight compilation are priorities.*
+
+| Module | Python Rich Equivalent | Proposed C++ Strategy | Dependency Impact | Recommendation |
+| :--- | :--- | :--- | :--- | :--- |
+| **Markdown** | `rich.markdown` | Integrate `md4c` CommonMark parser | Lightweight C library | **Optional**: Integrate as separate CMake target `rich::markdown` |
+| **Syntax Highlighting** | `rich.syntax` | Regex lexer or Tree-Sitter | Heavy grammar binaries | **Defer**: Provide pluggable `Highlighter` interface instead |
+| **Tracebacks** | `rich.traceback` | `cpptrace` or C++23 `<stacktrace>` | Platform symbol resolution | **Nice-to-have**: Standalone CMake target `rich::traceback` |
+| **SVG Export** | `Console.save_svg` | Pure C++ SVG string templating | **0 deps** | **Useful**: Web snapshots of terminal sessions |
+| **Full Unicode Tables** | `rich.cells` | Generate static C++ table or `utf8proc` | Minimal table or 1 C dep | **Only if needed**: For CJK/emoji-heavy tools |
+
+---
+
+## Downstream Packaging & CI
+- [x] Basic GitHub Actions CI workflow (`.github/workflows/ci.yml`).
+- [x] Basic `vcpkg.json` manifest.
+- [ ] Matrix CI build across:
+  - MSVC (Windows x64)
+  - GCC 11+ (Ubuntu Linux x64)
+  - Clang 13+ (macOS ARM64/x64)
+- [ ] CMake downstream export verification (`find_package(rich CONFIG REQUIRED)`).
