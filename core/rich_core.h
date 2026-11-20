@@ -9,6 +9,7 @@
 #include <memory>
 #include <iostream>
 namespace rich {
+#include <sstream>
 #include <utility>
 #include <cstdint>
 
@@ -56,6 +57,7 @@ struct RICH_EXPORT Segment {
 
 struct Options {
     bool show_border{true};
+    size_t width{80};
 };
 
 class Console;
@@ -107,14 +109,28 @@ private:
     std::shared_ptr<const Concept> self_;
 };
 
+struct ConsoleOptions {
+    size_t width{80};
+    bool record{false};
+    bool legacy_windows{false};
+};
+
 class RICH_EXPORT Console {
 public:
-    explicit Console(std::ostream& os = std::cout) noexcept : os_(os) {}
+    explicit Console(std::ostream& os = std::cout, ConsoleOptions options = {}) noexcept
+        : os_(os), options_(options) {}
+
     void print(const AnyRenderable& ar);
     void print(std::string_view markup_text);
     void rule(std::string_view title = "");
+
+    size_t width() const noexcept { return options_.width; }
+    std::string export_text() const;
+
 private:
     std::ostream& os_;
+    ConsoleOptions options_;
+    std::string record_buffer_;
 };
 
 // Pipe composition
@@ -150,7 +166,7 @@ inline std::pair<size_t, size_t> measure_item(const StyledText& t, const Console
 // Rule primitive
 struct Rule {
     std::string title;
-    std::string style_tag{"dim"};
+    size_t width{0};
 };
 RICH_EXPORT std::vector<Segment> render_item(const Rule& r, const Console& c, const Options& o);
 RICH_EXPORT std::pair<size_t, size_t> measure_item(const Rule& r, const Console& c, const Options& o);

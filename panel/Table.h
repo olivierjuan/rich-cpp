@@ -23,9 +23,24 @@ inline std::string repeat_box(std::string_view glyph, size_t count) {
     return res;
 }
 
+inline size_t cell_width_table(std::string_view sv) {
+    size_t width = 0;
+    size_t i = 0;
+    while (i < sv.size()) {
+        unsigned char c = static_cast<unsigned char>(sv[i]);
+        if (c < 0x80) { ++width; ++i; }
+        else if ((c & 0xE0) == 0xC0) { ++width; i += 2; }
+        else if ((c & 0xF0) == 0xE0) { ++width; i += 3; }
+        else if ((c & 0xF8) == 0xF0) { width += 2; i += 4; }
+        else { ++i; }
+    }
+    return width;
+}
+
 inline std::string align_text(std::string_view text, size_t width, Justify j) {
-    if (text.size() >= width) return std::string(text);
-    size_t diff = width - text.size();
+    size_t tw = cell_width_table(text);
+    if (tw >= width) return std::string(text);
+    size_t diff = width - tw;
     if (j == Justify::Right) {
         return std::string(diff, ' ') + std::string(text);
     } else if (j == Justify::Center) {
@@ -55,30 +70,25 @@ public:
         std::vector<rich::Segment> out;
         if (cols_.empty()) return out;
 
-        // Compute column widths
+        // Compute max content width per column
         std::vector<size_t> col_widths(cols_.size(), 0);
         for (size_t i = 0; i < cols_.size(); ++i) {
-            col_widths[i] = std::max(col_widths[i], cols_[i].header.size());
+            col_widths[i] = std::max(col_widths[i], cell_width_table(cols_[i].header));
         }
         for (const auto& r : rows_) {
             for (size_t i = 0; i < std::min(r.size(), cols_.size()); ++i) {
-                // Strip markup approximation for width calculation
-                std::string plain;
-                bool in_tag = false;
-                for (char c : r[i]) {
-                    if (c == '[') in_tag = true;
-                    else if (c == ']') in_tag = false;
-                    else if (!in_tag) plain.push_back(c);
-                }
-                col_widths[i] = std::max(col_widths[i], plain.size());
+                auto segs = rich::parse_markup(r[i]);
+                size_t text_len = 0;
+                for (const auto& s : segs) text_len += cell_width_table(s.text);
+                col_widths[i] = std::max(col_widths[i], text_len);
             }
         }
-        // Add 2 padding chars to each column
+        // Add 2 padding chars (1 left space + 1 right space) to match Python Rich table
         for (auto& w : col_widths) w += 2;
 
         rich::Style border_style{.dim = true, .color = rich::Color::from_ansi(90)};
 
-        // Top border: ╭─────┬─────╮
+        // Top border: ╭───────┬─────╮
         std::string top = "╭";
         for (size_t i = 0; i < cols_.size(); ++i) {
             top += repeat_box("─", col_widths[i]);
@@ -89,12 +99,14 @@ public:
         // Header row
         for (size_t i = 0; i < cols_.size(); ++i) {
             out.push_back({"│", border_style});
-            std::string padded = align_text(" " + cols_[i].header + " ", col_widths[i], cols_[i].justify);
-            out.push_back({std::move(padded), rich::Style{.bold = true, .color = rich::Color::from_ansi(97)}});
+            // Align with 1 char leading and trailing padding inside col_width
+            size_t inner_w = (col_widths[i] >= 2) ? (col_widths[i] - 2) : 0;
+            std::string aligned = align_text(cols_[i].header, inner_w, cols_[i].justify);
+            out.push_back({" " + aligned + " ", rich::Style{.bold = true, .color = rich::Color::from_ansi(97)}});
         }
         out.push_back({"│\n", border_style});
 
-        // Header separator: ├─────┼─────┤
+        // Header separator: ├───────┼─────┤
         std::string sep = "├";
         for (size_t i = 0; i < cols_.size(); ++i) {
             sep += repeat_box("─", col_widths[i]);
@@ -107,21 +119,33 @@ public:
             for (size_t i = 0; i < cols_.size(); ++i) {
                 out.push_back({"│", border_style});
                 std::string cell_raw = (i < r.size()) ? r[i] : "";
-                // Parse markup in cell
                 auto segs = rich::parse_markup(cell_raw);
                 size_t text_len = 0;
-                for (const auto& s : segs) text_len += s.text.size();
+                for (const auto& s : segs) text_len += cell_width_table(s.text);
 
-                out.push_back({" ", {}});
-                for (auto& s : segs) out.push_back(std::move(s));
+                size_t inner_w = (col_widths[i] >= 2) ? (col_widths[i] - 2) : 0;
+                size_t pad_diff = (inner_w > text_len) ? (inner_w - text_len) : 0;
 
-                size_t pad_need = (col_widths[i] > text_len + 1) ? (col_widths[i] - text_len - 1) : 0;
-                out.push_back({std::string(pad_need, ' '), {}});
+                if (cols_[i].justify == Justify::Right) {
+                    out.push_back({" " + std::string(pad_diff, ' '), {}});
+                    for (auto& s : segs) out.push_back(std::move(s));
+                    out.push_back({" ", {}});
+                } else if (cols_[i].justify == Justify::Center) {
+                    size_t left_pad = pad_diff / 2;
+                    size_t right_pad = pad_diff - left_pad;
+                    out.push_back({" " + std::string(left_pad, ' '), {}});
+                    for (auto& s : segs) out.push_back(std::move(s));
+                    out.push_back({std::string(right_pad, ' ') + " ", {}});
+                } else {
+                    out.push_back({" ", {}});
+                    for (auto& s : segs) out.push_back(std::move(s));
+                    out.push_back({std::string(pad_diff, ' ') + " ", {}});
+                }
             }
             out.push_back({"│\n", border_style});
         }
 
-        // Bottom border: ╰─────┴─────╯
+        // Bottom border: ╰───────┴─────╯
         std::string bot = "╰";
         for (size_t i = 0; i < cols_.size(); ++i) {
             bot += repeat_box("─", col_widths[i]);
@@ -134,7 +158,7 @@ public:
 
     std::pair<size_t, size_t> measure(const rich::Console&, const rich::Options&) const {
         size_t total_w = 1;
-        for (const auto& c : cols_) total_w += c.header.size() + 3;
+        for (const auto& c : cols_) total_w += cell_width_table(c.header) + 3;
         return {total_w, rows_.size() + 4};
     }
 

@@ -19,3 +19,7 @@ target_link_libraries(run_quick PRIVATE rich_core panel)
 
 add_executable(run_columns examples/columns_demo.cpp)
 target_link_libraries(run_columns PRIVATE rich_core panel)
+
+# Oracle validation test runner
+add_executable(test_runner tests/test_runner.cpp)
+target_link_libraries(test_runner PRIVATE rich_core panel)

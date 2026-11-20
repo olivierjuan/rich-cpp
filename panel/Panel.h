@@ -10,7 +10,7 @@ namespace rich::panel {
 struct PanelOptions {
     std::string title;
     bool show_border{true};
-    size_t width{0}; // 0 = auto-fit content, >0 = fixed width
+    size_t width{0}; // 0 = auto-fit, >0 = fixed width
 };
 
 namespace {
@@ -50,7 +50,7 @@ inline size_t cell_width(std::string_view sv) {
 
 class Panel {
 public:
-    Panel(rich::AnyRenderable inner, PanelOptions options)
+    Panel(rich::AnyRenderable inner, PanelOptions options = {})
         : inner_(std::move(inner)), options_(std::move(options)) {}
 
     std::vector<rich::Segment> render(const rich::Console& con, const rich::Options& opt) const {
@@ -72,17 +72,22 @@ public:
         }
         rich::Style border_style{.dim = true, .color = rich::Color::from_ansi(90)};
 
-        // total_w is the exact outer width from left border char to right border char
-        // Inner usable space between "│ " and " │" is (total_w - 4)
-        size_t inner_content_w = (total_w >= 4) ? (total_w - 4) : 0;
-        size_t bottom_dashes = (total_w >= 2) ? (total_w - 2) : 0;
-
+        // Exact parity with Python Rich:
+        // Top: ╭────── Title ──────╮
+        // Left dashes = (total_w - title_vis_w - 4) / 2
+        // Right dashes = total_w - 2 - 2 - title_vis_w - left_dashes
         if (options_.show_border) {
             out.push_back({"│ ", {}});
-            out.push_back({"╭─ ", border_style});
-            if (title_vis_w > 0) {
+            if (title_vis_w == 0) {
+                size_t dashes = (total_w >= 2) ? (total_w - 2) : 0;
+                out.push_back({"╭" + repeat_utf8("─", dashes) + "╮\n", border_style});
+            } else {
+                size_t space_avail = (total_w > title_vis_w + 4) ? (total_w - title_vis_w - 4) : 0;
+                size_t left_dashes = space_avail / 2;
+                size_t right_dashes = space_avail - left_dashes;
+                out.push_back({"╭" + repeat_utf8("─", left_dashes) + " ", border_style});
                 for (auto& ts : title_segs) out.push_back(std::move(ts));
-                out.push_back({" ", border_style});
+                out.push_back({" " + repeat_utf8("─", right_dashes) + "╮\n", border_style});
         }
         for (auto& s : inner_segs) {
             out.push_back(std::move(s));
@@ -248,10 +253,6 @@ public:
                     start = nl + 1;
                 }
             }
-            // Used so far: "╭─ " (3) + title (title_vis_w) + " " (1 if title > 0) + "╮" (1)
-            size_t used_header = (title_vis_w > 0) ? (title_vis_w + 4) : 3;
-            size_t top_dashes = (total_w > used_header + 1) ? (total_w - used_header - 1) : 1;
-            out.push_back({repeat_utf8("─", top_dashes) + "╮\n", border_style});
         }
 
             std::string bot = "╰" + repeat_utf8("─", inner_box_width + 1) + "╯\n";
@@ -404,6 +405,46 @@ public:
         for (const auto& line : lines) {
             size_t line_vis_w = 0;
             for (const auto& seg : line) line_vis_w += cell_width(seg.text);
+        auto inner_segs = inner_.render(con, opt);
+
+            if (options_.show_border) out.push_back({"│ ", border_style});
+            for (const auto& seg : line) out.push_back(seg);
+        // Group inner segments by line
+        std::vector<std::vector<rich::Segment>> lines;
+        lines.emplace_back();
+
+            if (options_.show_border) {
+                size_t pad = (inner_content_w > line_vis_w) ? (inner_content_w - line_vis_w) : 0;
+                out.push_back({std::string(pad, ' ') + " │\n", border_style});
+            } else {
+                out.push_back({"\n", {}});
+        for (const auto& s : inner_segs) {
+            size_t start = 0;
+            while (start < s.text.size()) {
+                size_t nl = s.text.find('\n', start);
+                if (nl == std::string::npos) {
+                    lines.back().push_back({s.text.substr(start), s.style});
+                    break;
+                } else {
+                    lines.back().push_back({s.text.substr(start, nl - start), s.style});
+                    lines.emplace_back();
+                    start = nl + 1;
+                }
+            }
+        }
+
+            std::string bot = "╰" + repeat_utf8("─", bottom_dashes) + "╯\n";
+            out.push_back({std::move(bot), border_style});
+        if (!lines.empty() && lines.back().empty()) {
+            lines.pop_back();
+        }
+
+        // Inner width = total_w - 4 (1 for '│', 1 for ' ', 1 for ' ', 1 for '│')
+        size_t inner_content_w = (total_w >= 4) ? (total_w - 4) : 0;
+
+        for (const auto& line : lines) {
+            size_t line_vis_w = 0;
+            for (const auto& seg : line) line_vis_w += cell_width(seg.text);
 
             if (options_.show_border) out.push_back({"│ ", border_style});
             for (const auto& seg : line) out.push_back(seg);
@@ -417,6 +458,7 @@ public:
         }
 
         if (options_.show_border) {
+            size_t bottom_dashes = (total_w >= 2) ? (total_w - 2) : 0;
             std::string bot = "╰" + repeat_utf8("─", bottom_dashes) + "╯\n";
             out.push_back({std::move(bot), border_style});
         }
@@ -425,6 +467,10 @@ public:
     }
 
     std::pair<size_t, size_t> measure(const rich::Console& con, const rich::Options& opt) const {
+        if (options_.width > 0) {
+            return {options_.width, 3};
+        }
+
         auto title_segs = rich::parse_markup(options_.title);
         size_t title_vis_w = 0;
         for (const auto& s : title_segs) title_vis_w += cell_width(s.text);
@@ -456,9 +502,6 @@ public:
         max_line = std::max(max_line, current);
 
         size_t calculated_w = std::max(max_line + 4, title_vis_w + 6);
-        if (options_.width > 0) {
-            calculated_w = std::max(calculated_w, options_.width);
-        }
         return {calculated_w, line_count + 2};
     }
 
@@ -474,7 +517,6 @@ inline std::pair<size_t, size_t> measure_item(const Panel& p, const rich::Consol
     return p.measure(c, o);
 }
 
-// Factory for operator|
 inline auto panel(PanelOptions options) {
     return [options = std::move(options)](rich::AnyRenderable inner) mutable {
         return rich::AnyRenderable(Panel(std::move(inner), std::move(options)));
