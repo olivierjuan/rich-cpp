@@ -31,8 +31,8 @@ This document outlines the phased development of a C++ port of the Rich library,
 ## Phase 4: Live & Advanced (Dynamic Content)
 *Goal: Support dynamic terminal updates.*
 
-- [ ] **Live/Progress/Status**: Implement `std::jthread`-based refresh loop with thread-safe output flushing.
-- [ ] **Platform Shim**: Native VT enablement for Windows/Unix.
+- [x] **Live/Progress/Status**: Implement `std::jthread`-based refresh loop with thread-safe output flushing.
+- [x] **Platform Shim**: Native VT enablement for Windows/Unix.
 
 ## Phase 5: Optional Modules (Ecosystem Integration)
 *Goal: Separate concerns for minimal core impact.*
