@@ -13,6 +13,9 @@ target_compile_features(rich_core PUBLIC cxx_std_20)
 # Panel mini demo
 add_subdirectory(panel)
 
-# Demo binary
+# Demo binaries
 add_executable(run_quick core/quick.cpp)
 target_link_libraries(run_quick PRIVATE rich_core panel)
+
+add_executable(run_columns examples/columns_demo.cpp)
+target_link_libraries(run_columns PRIVATE rich_core panel)
