@@ -1,19 +1,46 @@
 #include "rich_core.h"
 namespace rich {
+#ifdef _WIN32
+#  define WIN32_LEAN_AND_MEAN
+#  define NOMINMAX
+#  include <windows.h>
+#endif
 
 namespace rich {
 
+namespace {
+void init_terminal() {
+#ifdef _WIN32
+    static const bool initialized = []() {
+        SetConsoleOutputCP(CP_UTF8);
+        HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+        if (hOut != INVALID_HANDLE_VALUE) {
+            DWORD dwMode = 0;
+            if (GetConsoleMode(hOut, &dwMode)) {
+                dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+                SetConsoleMode(hOut, dwMode);
+            }
+        }
+        return true;
+    }();
+    (void)initialized;
+#endif
+}
+} // namespace
+
 void Console::print(const AnyRenderable& ar) {
+    init_terminal();
     auto segments = ar.render(*this, Options{});
     for (const auto& s : segments) {
-        // Basic ANSI application
         if (s.style.bold) os_ << "\x1b[1m";
         if (s.style.red) os_ << "\x1b[31m";
         if (s.style.green) os_ << "\x1b[32m";
         os_ << s.text;
-        os_ << "\x1b[0m"; // Reset
+        if (s.style.bold || s.style.red || s.style.green) {
+            os_ << "\x1b[0m";
+        }
     }
-    os_ << std::endl;
+    os_ << '\n';
 }
 
 std::vector<Segment> parse_markup(std::string_view sv) {
@@ -28,7 +55,7 @@ std::vector<Segment> parse_markup(std::string_view sv) {
                 if (tag == "bold") current_style.bold = true;
                 else if (tag == "red") current_style.red = true;
                 else if (tag == "green") current_style.green = true;
-                else if (tag == "/bold") current_style.bold = false;
+                else if (tag == "/bold" || tag == "/") current_style.bold = false;
                 else if (tag == "/red") current_style.red = false;
                 else if (tag == "/green") current_style.green = false;
                 pos = end + 1;
@@ -37,7 +64,9 @@ std::vector<Segment> parse_markup(std::string_view sv) {
         }
         size_t next_tag = sv.find('[', pos);
         std::string text(sv.substr(pos, next_tag - pos));
-        segments.push_back({text, current_style});
+        if (!text.empty()) {
+            segments.push_back({std::move(text), current_style});
+        }
         pos = next_tag;
     }
     return segments;

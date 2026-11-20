@@ -20,7 +20,6 @@ int main() {
 
 int main() {
     using namespace rich;
-    using namespace rich::panel;
     using namespace rich::decorator;
     
     Console console;
@@ -28,7 +27,7 @@ int main() {
     // Demonstrate pipe composition with Options
     auto content = AnyRenderable(StyledText{"[bold][red]Hello[/red][/bold] from [green]C++ Rich![/green]"});
     
-    console.print(content | pad(1) | panel({.title="Demo", .show_border=true}));
+    console.print(content | pad(1) | rich::panel::panel({.title="Demo", .show_border=true}));
     
     return 0;
 }

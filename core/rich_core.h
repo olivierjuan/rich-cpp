@@ -9,6 +9,7 @@
 #include <memory>
 #include <iostream>
 namespace rich {
+#include <utility>
 
 namespace rich {
 
@@ -27,22 +28,30 @@ struct RICH_EXPORT Segment {
 struct Options {
     bool show_border{true};
 };
+
 class Console;
 
 template<class T, class C, class Opt>
 concept Renderable = requires(const T& t, const C& c, const Opt& o) {
-    { render(t, c, o) } -> std::same_as<std::vector<Segment>>;
-    { measure(t, c, o) } -> std::convertible_to<std::pair<size_t, size_t>>;
+    { render_item(t, c, o) } -> std::same_as<std::vector<Segment>>;
+    { measure_item(t, c, o) } -> std::convertible_to<std::pair<size_t, size_t>>;
 };
 
 class RICH_EXPORT AnyRenderable {
 public:
     AnyRenderable() = default;
-    template<class T> requires Renderable<T, Console, Options>
-    AnyRenderable(T&& t) : self_(std::make_shared<Model<std::decay_t<T>>>(std::forward<T>(t))) {}
-    
-    std::vector<Segment> render(const Console& con, const Options& opt) const { return self_->render(con, opt); }
-    std::pair<size_t, size_t> measure(const Console& con, const Options& opt) const { return self_->measure(con, opt); }
+
+    template<class T>
+    requires Renderable<std::decay_t<T>, Console, Options>
+    AnyRenderable(T&& t)
+        : self_(std::make_shared<Model<std::decay_t<T>>>(std::forward<T>(t))) {}
+
+    std::vector<Segment> render(const Console& con, const Options& opt) const {
+        return self_ ? self_->render(con, opt) : std::vector<Segment>{};
+    }
+    std::pair<size_t, size_t> measure(const Console& con, const Options& opt) const {
+        return self_ ? self_->measure(con, opt) : std::pair<size_t, size_t>{0, 0};
+    }
 
 private:
     struct Concept {
@@ -50,13 +59,22 @@ private:
         virtual std::vector<Segment> render(const Console& con, const Options& opt) const = 0;
         virtual std::pair<size_t, size_t> measure(const Console& con, const Options& opt) const = 0;
     };
+
     template<class T>
     struct Model final : Concept {
-        explicit Model(T&& t) : t_(std::move(t)) {}
-        std::vector<Segment> render(const Console& con, const Options& opt) const override { return rich::render(t_, con, opt); }
-        std::pair<size_t, size_t> measure(const Console& con, const Options& opt) const override { return rich::measure(t_, con, opt); }
+        template<typename U>
+        explicit Model(U&& t) : t_(std::forward<U>(t)) {}
+
+        std::vector<Segment> render(const Console& con, const Options& opt) const override {
+            return render_item(t_, con, opt);
+        }
+        std::pair<size_t, size_t> measure(const Console& con, const Options& opt) const override {
+            return measure_item(t_, con, opt);
+        }
+
         T t_;
     };
+
     std::shared_ptr<const Concept> self_;
 };
 
@@ -78,15 +96,23 @@ AnyRenderable operator|(AnyRenderable lhs, F&& rhs) {
 struct Text {
     std::string content;
 };
-inline std::vector<Segment> render(const Text& t, const Console&, const Options&) { return {{t.content, {}}}; }
-inline std::pair<size_t, size_t> measure(const Text& t, const Console&, const Options&) { return {t.content.size(), 1}; }
+inline std::vector<Segment> render_item(const Text& t, const Console&, const Options&) {
+    return {{t.content, {}}};
+}
+inline std::pair<size_t, size_t> measure_item(const Text& t, const Console&, const Options&) {
+    return {t.content.size(), 1};
+}
 
 // StyledText primitive
 struct StyledText {
     std::string content;
 };
 RICH_EXPORT std::vector<Segment> parse_markup(std::string_view sv);
-inline std::vector<Segment> render(const StyledText& t, const Console&, const Options&) { return parse_markup(t.content); }
-inline std::pair<size_t, size_t> measure(const StyledText& t, const Console&, const Options&) { return {t.content.size(), 1}; }
+inline std::vector<Segment> render_item(const StyledText& t, const Console&, const Options&) {
+    return parse_markup(t.content);
+}
+inline std::pair<size_t, size_t> measure_item(const StyledText& t, const Console&, const Options&) {
+    return {t.content.size(), 1};
+}
 
 } // namespace rich
