@@ -7,7 +7,6 @@
 namespace rich::decorator {
 
 namespace {
-// Calculate visual cell width: handles standard ASCII, basic box chars, and multi-byte UTF-8
 inline size_t visual_width(std::string_view sv) {
     size_t width = 0;
     size_t i = 0;
@@ -17,15 +16,12 @@ inline size_t visual_width(std::string_view sv) {
             ++width;
             ++i;
         } else if ((c & 0xE0) == 0xC0) {
-            // 2-byte UTF-8 (e.g. ², é, à) -> 1 cell width
             ++width;
             i += 2;
         } else if ((c & 0xF0) == 0xE0) {
-            // 3-byte UTF-8 (e.g. ╭, ─, ╮, │, ╰, ╯) -> 1 cell width
             ++width;
             i += 3;
         } else if ((c & 0xF8) == 0xF0) {
-            // 4-byte UTF-8 (e.g. emoji) -> 2 cell widths
             width += 2;
             i += 4;
         } else {
@@ -38,16 +34,20 @@ inline size_t visual_width(std::string_view sv) {
 
 class Columns {
 public:
-    Columns(std::vector<rich::AnyRenderable> renderables, size_t spacing = 2)
-        : renderables_(std::move(renderables)), spacing_(spacing) {}
+    Columns(std::vector<rich::AnyRenderable> renderables, size_t spacing = 3, size_t max_columns = 0)
+        : renderables_(std::move(renderables)), spacing_(spacing), max_columns_(max_columns) {}
 
     std::vector<rich::Segment> render(const rich::Console& con, const rich::Options& opt) const {
         if (renderables_.empty()) return {};
 
-        // Each renderable produces lines of segments
-        std::vector<std::vector<std::vector<rich::Segment>>> rendered_items;
-        std::vector<size_t> item_widths;
-        size_t max_lines = 0;
+        // 1. Break each item into lines of segments and determine its width
+        struct RenderedItem {
+            std::vector<std::vector<rich::Segment>> lines;
+            size_t width{0};
+        };
+
+        std::vector<RenderedItem> items;
+        items.reserve(renderables_.size());
 
         for (const auto& r : renderables_) {
             auto segs = r.render(con, opt);
@@ -69,7 +69,6 @@ public:
                 }
             }
 
-            // Remove trailing empty line if it was produced by a trailing \n
             if (!lines.empty() && lines.back().empty()) {
                 lines.pop_back();
             }
@@ -81,37 +80,53 @@ public:
                 max_w = std::max(max_w, w);
             }
 
-            max_lines = std::max(max_lines, lines.size());
-            item_widths.push_back(max_w);
-            rendered_items.push_back(std::move(lines));
+            items.push_back({std::move(lines), max_w});
+        }
+
+        // 2. Chunk items into rows (e.g. 3 columns per row, or auto wrapping)
+        size_t cols_per_row = max_columns_;
+        if (cols_per_row == 0) {
+            // Auto wrap if row exceeds ~85 columns, or default to 3
+            cols_per_row = 3;
         }
 
         std::vector<rich::Segment> out;
         std::string gap(spacing_, ' ');
 
-        for (size_t line_idx = 0; line_idx < max_lines; ++line_idx) {
-            for (size_t item_idx = 0; item_idx < rendered_items.size(); ++item_idx) {
-                const auto& item_lines = rendered_items[item_idx];
-                size_t printed_w = 0;
+        for (size_t row_start = 0; row_start < items.size(); row_start += cols_per_row) {
+            size_t row_end = std::min(row_start + cols_per_row, items.size());
 
-                if (line_idx < item_lines.size()) {
-                    for (const auto& seg : item_lines[line_idx]) {
-                        printed_w += visual_width(seg.text);
-                        out.push_back(seg);
+            // Max line height in this row
+            size_t row_max_lines = 0;
+            for (size_t i = row_start; i < row_end; ++i) {
+                row_max_lines = std::max(row_max_lines, items[i].lines.size());
+            }
+
+            // Interleave lines for this row: all left-aligned starting from col 0
+            for (size_t line_idx = 0; line_idx < row_max_lines; ++line_idx) {
+                for (size_t i = row_start; i < row_end; ++i) {
+                    const auto& item = items[i];
+                    size_t printed_w = 0;
+
+                    if (line_idx < item.lines.size()) {
+                        for (const auto& seg : item.lines[line_idx]) {
+                            printed_w += visual_width(seg.text);
+                            out.push_back(seg);
+                        }
+                    }
+
+                    // Pad up to this item's specific width
+                    if (printed_w < item.width) {
+                        out.push_back({std::string(item.width - printed_w, ' '), {}});
+                    }
+
+                    // Separation gap (only between items, not after the last in row)
+                    if (i + 1 < row_end) {
+                        out.push_back({gap, {}});
                     }
                 }
-
-                // Pad out to item_widths[item_idx] in visible column cells
-                if (printed_w < item_widths[item_idx]) {
-                    out.push_back({std::string(item_widths[item_idx] - printed_w, ' '), {}});
-                }
-
-                // Spacing between columns (not after last column)
-                if (item_idx + 1 < rendered_items.size()) {
-                    out.push_back({gap, {}});
-                }
+                out.push_back({"\n", {}});
             }
-            out.push_back({"\n", {}});
         }
 
         return out;
@@ -125,15 +140,13 @@ public:
             total_w += w;
             max_h = std::max(max_h, h);
         }
-        if (!renderables_.empty()) {
-            total_w += spacing_ * (renderables_.size() - 1);
-        }
         return {total_w, max_h};
     }
 
 private:
     std::vector<rich::AnyRenderable> renderables_;
     size_t spacing_;
+    size_t max_columns_;
 };
 
 inline std::vector<rich::Segment> render_item(const Columns& c, const rich::Console& con, const rich::Options& o) {
@@ -143,8 +156,8 @@ inline std::pair<size_t, size_t> measure_item(const Columns& c, const rich::Cons
     return c.measure(con, o);
 }
 
-inline rich::AnyRenderable columns(std::vector<rich::AnyRenderable> renderables, size_t spacing = 2) {
-    return rich::AnyRenderable(Columns(std::move(renderables), spacing));
+inline rich::AnyRenderable columns(std::vector<rich::AnyRenderable> renderables, size_t spacing = 3, size_t max_columns = 0) {
+    return rich::AnyRenderable(Columns(std::move(renderables), spacing, max_columns));
 }
 
 } // namespace rich::decorator

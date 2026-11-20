@@ -617,6 +617,86 @@ bool is_known_tag(std::string_view tag) {
 }
 } // namespace
 
+void Console::print(std::string_view markup_text) {
+    print(AnyRenderable(StyledText{std::string(markup_text)}));
+}
+
+void Console::rule(std::string_view title) {
+    print(AnyRenderable(Rule{std::string(title)}));
+}
+
+std::vector<Segment> render_item(const Rule& r, const Console&, const Options&) {
+    const size_t target_width = 80;
+    std::vector<Segment> out;
+    Style dash_style{.dim = true, .color = Color::from_ansi(90)};
+
+    if (r.title.empty()) {
+        out.push_back({repeat_utf8_core("─", target_width), dash_style});
+        return out;
+    }
+
+    size_t title_len = r.title.size();
+    size_t side = (target_width > title_len + 4) ? (target_width - title_len - 4) / 2 : 2;
+    size_t right = target_width > (side + title_len + 4) ? (target_width - side - title_len - 4) : side;
+
+    out.push_back({repeat_utf8_core("─", side) + " ", dash_style});
+    out.push_back({r.title, Style{.bold = true, .color = Color::from_ansi(97)}});
+    out.push_back({" " + repeat_utf8_core("─", right), dash_style});
+    return out;
+}
+
+std::pair<size_t, size_t> measure_item(const Rule&, const Console&, const Options&) {
+    return {80, 1};
+}
+
+namespace {
+bool apply_tag(std::string_view tag, Style& st) {
+    if (tag == "bold" || tag == "b") { st.bold = true; return true; }
+    if (tag == "dim" || tag == "d") { st.dim = true; return true; }
+    if (tag == "italic" || tag == "i") { st.italic = true; return true; }
+    if (tag == "underline" || tag == "u") { st.underline = true; return true; }
+    if (tag == "reverse") { st.reverse = true; return true; }
+    if (tag == "red") { st.color = Color::from_ansi(31); return true; }
+    if (tag == "green") { st.color = Color::from_ansi(32); return true; }
+    if (tag == "yellow") { st.color = Color::from_ansi(33); return true; }
+    if (tag == "blue") { st.color = Color::from_ansi(34); return true; }
+    if (tag == "magenta") { st.color = Color::from_ansi(35); return true; }
+    if (tag == "cyan") { st.color = Color::from_ansi(36); return true; }
+    if (tag == "white") { st.color = Color::from_ansi(37); return true; }
+    if (tag == "bright_red") { st.color = Color::from_ansi(91); return true; }
+    if (tag == "bright_green") { st.color = Color::from_ansi(92); return true; }
+    if (tag == "bright_yellow") { st.color = Color::from_ansi(93); return true; }
+    if (tag == "bright_blue") { st.color = Color::from_ansi(94); return true; }
+    if (tag == "bright_magenta") { st.color = Color::from_ansi(95); return true; }
+    if (tag == "bright_cyan") { st.color = Color::from_ansi(96); return true; }
+    if (tag == "bright_white") { st.color = Color::from_ansi(97); return true; }
+    if (tag == "on red") { st.bg_color = Color::from_ansi(41); return true; }
+    if (tag == "on green") { st.bg_color = Color::from_ansi(42); return true; }
+    if (tag == "on blue") { st.bg_color = Color::from_ansi(44); return true; }
+    if (tag == "on black") { st.bg_color = Color::from_ansi(40); return true; }
+    return false;
+}
+
+bool is_known_tag(std::string_view tag) {
+    if (tag == "/" || tag == "/all") return true;
+    if (!tag.empty() && tag[0] == '/') return true;
+    Style dummy;
+    size_t tstart = 0;
+    bool any_known = false;
+    while (tstart < tag.size()) {
+        size_t tend = tag.find(' ', tstart);
+        if (tend == std::string_view::npos) tend = tag.size();
+        if (apply_tag(tag.substr(tstart, tend - tstart), dummy)) {
+            any_known = true;
+        } else {
+            return false;
+        }
+        tstart = tend + 1;
+    }
+    return any_known;
+}
+} // namespace
+
 std::vector<Segment> parse_markup(std::string_view sv) {
     std::vector<Segment> segments;
     std::vector<Style> style_stack;
