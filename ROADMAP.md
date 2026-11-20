@@ -37,9 +37,9 @@ This document outlines the phased development of a C++ port of the Rich library,
 ## Phase 5: Optional Modules (Ecosystem Integration)
 *Goal: Separate concerns for minimal core impact.*
 
-- [ ] **Markdown**: Integrate `md4c` as a standalone CMake target.
-- [ ] **Tracebacks**: Integrate `cpptrace` or `std::stacktrace` for pretty error handling.
-- [ ] **Syntax Highlighting**: Implement pluggable highlighter interface (e.g., regex-based or tree-sitter integration).
+- [x] **Markdown**: Integrate `md4c` as a standalone CMake target.
+- [x] **Tracebacks**: Integrate `cpptrace` or `std::stacktrace` for pretty error handling.
+- [x] **Syntax Highlighting**: Implement pluggable highlighter interface (e.g., regex-based or tree-sitter integration).
 ## Phase 6: Ecosystem & Adoption (The Polish)
 *Goal: Enable reliable downstream adoption and long-term maintainability.*
 
