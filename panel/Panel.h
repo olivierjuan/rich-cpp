@@ -1,5 +1,6 @@
 #pragma once
 #include <rich_core.h>
+#include <box.h>
 #include <algorithm>
 namespace rich::panel {
 #include <string>
@@ -11,6 +12,7 @@ struct PanelOptions {
     std::string title;
     bool show_border{true};
     size_t width{0}; // 0 = auto-fit, >0 = fixed width
+    box::Box box{box::ROUNDED};
 };
 
 namespace {
@@ -71,23 +73,20 @@ public:
             inner_text_len += s.text.size();
         }
         rich::Style border_style{.dim = true, .color = rich::Color::from_ansi(90)};
+        const auto& bx = options_.box;
 
-        // Exact parity with Python Rich:
-        // Top: ╭────── Title ──────╮
-        // Left dashes = (total_w - title_vis_w - 4) / 2
-        // Right dashes = total_w - 2 - 2 - title_vis_w - left_dashes
         if (options_.show_border) {
             out.push_back({"│ ", {}});
             if (title_vis_w == 0) {
                 size_t dashes = (total_w >= 2) ? (total_w - 2) : 0;
-                out.push_back({"╭" + repeat_utf8("─", dashes) + "╮\n", border_style});
+                out.push_back({std::string(bx.top_left) + repeat_utf8(bx.top, dashes) + std::string(bx.top_right) + "\n", border_style});
             } else {
                 size_t space_avail = (total_w > title_vis_w + 4) ? (total_w - title_vis_w - 4) : 0;
                 size_t left_dashes = space_avail / 2;
                 size_t right_dashes = space_avail - left_dashes;
-                out.push_back({"╭" + repeat_utf8("─", left_dashes) + " ", border_style});
+                out.push_back({std::string(bx.top_left) + repeat_utf8(bx.top, left_dashes) + " ", border_style});
                 for (auto& ts : title_segs) out.push_back(std::move(ts));
-                out.push_back({" " + repeat_utf8("─", right_dashes) + "╮\n", border_style});
+                out.push_back({" " + repeat_utf8(bx.top, right_dashes) + std::string(bx.top_right) + "\n", border_style});
         }
         for (auto& s : inner_segs) {
             out.push_back(std::move(s));
@@ -527,13 +526,52 @@ public:
         for (const auto& line : lines) {
             size_t line_vis_w = 0;
             for (const auto& seg : line) line_vis_w += cell_width(seg.text);
+        auto inner_segs = inner_.render(con, opt);
 
             if (options_.show_border) out.push_back({"│ ", border_style});
             for (const auto& seg : line) out.push_back(seg);
+        std::vector<std::vector<rich::Segment>> lines;
+        lines.emplace_back();
 
             if (options_.show_border) {
                 size_t pad = (inner_content_w > line_vis_w) ? (inner_content_w - line_vis_w) : 0;
                 out.push_back({std::string(pad, ' ') + " │\n", border_style});
+            } else {
+                out.push_back({"\n", {}});
+        for (const auto& s : inner_segs) {
+            size_t start = 0;
+            while (start < s.text.size()) {
+                size_t nl = s.text.find('\n', start);
+                if (nl == std::string::npos) {
+                    lines.back().push_back({s.text.substr(start), s.style});
+                    break;
+                } else {
+                    lines.back().push_back({s.text.substr(start, nl - start), s.style});
+                    lines.emplace_back();
+                    start = nl + 1;
+                }
+            }
+        }
+
+            size_t bottom_dashes = (total_w >= 2) ? (total_w - 2) : 0;
+            std::string bot = "╰" + repeat_utf8("─", bottom_dashes) + "╯\n";
+            out.push_back({std::move(bot), border_style});
+        if (!lines.empty() && lines.back().empty()) {
+            lines.pop_back();
+        }
+
+        size_t inner_content_w = (total_w >= 4) ? (total_w - 4) : 0;
+
+        for (const auto& line : lines) {
+            size_t line_vis_w = 0;
+            for (const auto& seg : line) line_vis_w += cell_width(seg.text);
+
+            if (options_.show_border) out.push_back({std::string(bx.mid_left) + " ", border_style});
+            for (const auto& seg : line) out.push_back(seg);
+
+            if (options_.show_border) {
+                size_t pad = (inner_content_w > line_vis_w) ? (inner_content_w - line_vis_w) : 0;
+                out.push_back({std::string(pad, ' ') + " " + std::string(bx.mid_right) + "\n", border_style});
             } else {
                 out.push_back({"\n", {}});
             }
@@ -541,7 +579,7 @@ public:
 
         if (options_.show_border) {
             size_t bottom_dashes = (total_w >= 2) ? (total_w - 2) : 0;
-            std::string bot = "╰" + repeat_utf8("─", bottom_dashes) + "╯\n";
+            std::string bot = std::string(bx.bottom_left) + repeat_utf8(bx.bottom, bottom_dashes) + std::string(bx.bottom_right) + "\n";
             out.push_back({std::move(bot), border_style});
         }
 

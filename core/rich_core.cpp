@@ -1,10 +1,15 @@
 #include "rich_core.h"
 namespace rich {
 #include <sstream>
+#include <cstdlib>
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
 #  define NOMINMAX
 #  include <windows.h>
+#  include <io.h>
+#else
+#  include <unistd.h>
+#  include <sys/ioctl.h>
 #endif
 
 namespace rich {
@@ -28,7 +33,33 @@ void init_terminal() {
 #endif
 }
 
+bool no_color_enabled() {
+    const char* nc = std::getenv("NO_COLOR");
+    return nc != nullptr && nc[0] != '\0';
+}
+
+size_t detect_terminal_width() {
+#ifdef _WIN32
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hOut != INVALID_HANDLE_VALUE) {
+        CONSOLE_SCREEN_BUFFER_INFO csbi;
+        if (GetConsoleScreenBufferInfo(hOut, &csbi)) {
+            int width = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+            if (width > 0) return static_cast<size_t>(width);
+        }
+    }
+#else
+    struct winsize ws;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) {
+        return static_cast<size_t>(ws.ws_col);
+    }
+#endif
+    return 80;
+}
+
 std::string style_to_ansi(const Style& s) {
+    if (no_color_enabled()) return "";
+
     std::string out;
     if (s.bold) out += "\x1b[1m";
     if (s.dim) out += "\x1b[2m";
@@ -53,6 +84,7 @@ std::string style_to_ansi(const Style& s) {
 }
 
 bool has_style(const Style& s) {
+    if (no_color_enabled()) return false;
     return s.bold || s.dim || s.italic || s.underline || s.reverse ||
            s.color.type != Color::Type::None || s.bg_color.type != Color::Type::None;
 }
@@ -67,7 +99,8 @@ std::string repeat_utf8_core(std::string_view glyph, size_t count) {
 
 void Console::print(const AnyRenderable& ar) {
     init_terminal();
-    Options opt{.width = options_.width};
+    size_t active_w = (options_.width > 0) ? options_.width : detect_terminal_width();
+    Options opt{.width = active_w};
     auto segments = ar.render(*this, opt);
 
     for (const auto& s : segments) {
@@ -80,7 +113,6 @@ void Console::print(const AnyRenderable& ar) {
             record_buffer_ += s.text;
         }
     }
-    // Check if the output already ends with newline
     bool ends_nl = !segments.empty() && !segments.back().text.empty() && segments.back().text.back() == '\n';
     if (!ends_nl) {
         os_ << '\n';
@@ -987,6 +1019,92 @@ std::vector<Segment> render_item(const Rule& r, const Console& c, const Options&
     size_t title_len = r.title.size();
     // Match Python Rich rule: centered title flanked by space
     // side_width = (target_width - title_len - 2) / 2
+    size_t side = (target_width > title_len + 2) ? (target_width - title_len - 2) / 2 : 2;
+    size_t right = (target_width >= side + title_len + 2) ? (target_width - side - title_len - 2) : side;
+
+    out.push_back({repeat_utf8_core("─", side) + " ", dash_style});
+    out.push_back({r.title, Style{.bold = true, .color = Color::from_ansi(97)}});
+    out.push_back({" " + repeat_utf8_core("─", right) + "\n", dash_style});
+    return out;
+}
+
+std::pair<size_t, size_t> measure_item(const Rule& r, const Console&, const Options& opt) {
+    size_t w = (r.width > 0) ? r.width : opt.width;
+    return {w, 1};
+}
+
+namespace {
+bool apply_tag(std::string_view tag, Style& st) {
+    if (tag == "bold" || tag == "b") { st.bold = true; return true; }
+    if (tag == "dim" || tag == "d") { st.dim = true; return true; }
+    if (tag == "italic" || tag == "i") { st.italic = true; return true; }
+    if (tag == "underline" || tag == "u") { st.underline = true; return true; }
+    if (tag == "reverse") { st.reverse = true; return true; }
+    if (tag == "red") { st.color = Color::from_ansi(31); return true; }
+    if (tag == "green") { st.color = Color::from_ansi(32); return true; }
+    if (tag == "yellow") { st.color = Color::from_ansi(33); return true; }
+    if (tag == "blue") { st.color = Color::from_ansi(34); return true; }
+    if (tag == "magenta") { st.color = Color::from_ansi(35); return true; }
+    if (tag == "cyan") { st.color = Color::from_ansi(36); return true; }
+    if (tag == "white") { st.color = Color::from_ansi(37); return true; }
+    if (tag == "bright_red") { st.color = Color::from_ansi(91); return true; }
+    if (tag == "bright_green") { st.color = Color::from_ansi(92); return true; }
+    if (tag == "bright_yellow") { st.color = Color::from_ansi(93); return true; }
+    if (tag == "bright_blue") { st.color = Color::from_ansi(94); return true; }
+    if (tag == "bright_magenta") { st.color = Color::from_ansi(95); return true; }
+    if (tag == "bright_cyan") { st.color = Color::from_ansi(96); return true; }
+    if (tag == "bright_white") { st.color = Color::from_ansi(97); return true; }
+    if (tag == "on red") { st.bg_color = Color::from_ansi(41); return true; }
+    if (tag == "on green") { st.bg_color = Color::from_ansi(42); return true; }
+    if (tag == "on blue") { st.bg_color = Color::from_ansi(44); return true; }
+    if (tag == "on black") { st.bg_color = Color::from_ansi(40); return true; }
+    return false;
+}
+
+bool is_known_tag(std::string_view tag) {
+    if (tag == "/" || tag == "/all") return true;
+    if (!tag.empty() && tag[0] == '/') return true;
+    Style dummy;
+    size_t tstart = 0;
+    bool any_known = false;
+    while (tstart < tag.size()) {
+        size_t tend = tag.find(' ', tstart);
+        if (tend == std::string_view::npos) tend = tag.size();
+        if (apply_tag(tag.substr(tstart, tend - tstart), dummy)) {
+            any_known = true;
+        } else {
+            return false;
+        }
+        tstart = tend + 1;
+    }
+    return any_known;
+}
+} // namespace
+
+void Console::print(std::string_view markup_text) {
+    print(AnyRenderable(StyledText{std::string(markup_text)}));
+}
+
+void Console::rule(std::string_view title) {
+    size_t w = (options_.width > 0) ? options_.width : detect_terminal_width();
+    print(AnyRenderable(Rule{std::string(title), w}));
+}
+
+std::string Console::export_text() const {
+    return record_buffer_;
+}
+
+std::vector<Segment> render_item(const Rule& r, const Console& c, const Options& opt) {
+    size_t target_width = (r.width > 0) ? r.width : ((opt.width > 0) ? opt.width : 80);
+    std::vector<Segment> out;
+    Style dash_style{.dim = true, .color = Color::from_ansi(90)};
+
+    if (r.title.empty()) {
+        out.push_back({repeat_utf8_core("─", target_width) + "\n", dash_style});
+        return out;
+    }
+
+    size_t title_len = r.title.size();
     size_t side = (target_width > title_len + 2) ? (target_width - title_len - 2) / 2 : 2;
     size_t right = (target_width >= side + title_len + 2) ? (target_width - side - title_len - 2) : side;
 

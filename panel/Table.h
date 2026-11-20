@@ -1,5 +1,6 @@
 #pragma once
 #include <rich_core.h>
+#include <box.h>
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -13,6 +14,11 @@ struct ColumnOptions {
     std::string header;
     Justify justify{Justify::Left};
     std::string style{"bold"};
+};
+
+struct TableOptions {
+    std::string title;
+    box::Box box{box::ROUNDED};
 };
 
 namespace {
@@ -54,7 +60,8 @@ inline std::string align_text(std::string_view text, size_t width, Justify j) {
 
 class Table {
 public:
-    Table(std::string title = "") : title_(std::move(title)) {}
+    Table(TableOptions options = {}) : options_(std::move(options)) {}
+    Table(std::string title) : options_{.title = std::move(title)} {}
 
     Table& add_column(std::string header, Justify justify = Justify::Left, std::string style = "bold") {
         cols_.push_back({std::move(header), justify, std::move(style)});
@@ -70,7 +77,8 @@ public:
         std::vector<rich::Segment> out;
         if (cols_.empty()) return out;
 
-        // Compute max content width per column
+        const auto& bx = options_.box;
+
         std::vector<size_t> col_widths(cols_.size(), 0);
         for (size_t i = 0; i < cols_.size(); ++i) {
             col_widths[i] = std::max(col_widths[i], cell_width_table(cols_[i].header));
@@ -83,41 +91,39 @@ public:
                 col_widths[i] = std::max(col_widths[i], text_len);
             }
         }
-        // Add 2 padding chars (1 left space + 1 right space) to match Python Rich table
         for (auto& w : col_widths) w += 2;
 
         rich::Style border_style{.dim = true, .color = rich::Color::from_ansi(90)};
 
-        // Top border: ╭───────┬─────╮
-        std::string top = "╭";
+        // Top border
+        std::string top = std::string(bx.top_left);
         for (size_t i = 0; i < cols_.size(); ++i) {
-            top += repeat_box("─", col_widths[i]);
-            top += (i + 1 < cols_.size()) ? "┬" : "╮\n";
+            top += repeat_box(bx.top, col_widths[i]);
+            top += (i + 1 < cols_.size()) ? bx.top_divider : (std::string(bx.top_right) + "\n");
         }
         out.push_back({std::move(top), border_style});
 
         // Header row
         for (size_t i = 0; i < cols_.size(); ++i) {
-            out.push_back({"│", border_style});
-            // Align with 1 char leading and trailing padding inside col_width
+            out.push_back({std::string(bx.mid_left), border_style});
             size_t inner_w = (col_widths[i] >= 2) ? (col_widths[i] - 2) : 0;
             std::string aligned = align_text(cols_[i].header, inner_w, cols_[i].justify);
             out.push_back({" " + aligned + " ", rich::Style{.bold = true, .color = rich::Color::from_ansi(97)}});
         }
-        out.push_back({"│\n", border_style});
+        out.push_back({std::string(bx.mid_right) + "\n", border_style});
 
-        // Header separator: ├───────┼─────┤
-        std::string sep = "├";
+        // Header separator
+        std::string sep = std::string(bx.head_row_left);
         for (size_t i = 0; i < cols_.size(); ++i) {
-            sep += repeat_box("─", col_widths[i]);
-            sep += (i + 1 < cols_.size()) ? "┼" : "┤\n";
+            sep += repeat_box(bx.head_row_horizontal, col_widths[i]);
+            sep += (i + 1 < cols_.size()) ? bx.head_row_cross : (std::string(bx.head_row_right) + "\n");
         }
         out.push_back({std::move(sep), border_style});
 
         // Rows
         for (const auto& r : rows_) {
             for (size_t i = 0; i < cols_.size(); ++i) {
-                out.push_back({"│", border_style});
+                out.push_back({std::string(bx.mid_left), border_style});
                 std::string cell_raw = (i < r.size()) ? r[i] : "";
                 auto segs = rich::parse_markup(cell_raw);
                 size_t text_len = 0;
@@ -142,14 +148,14 @@ public:
                     out.push_back({std::string(pad_diff, ' ') + " ", {}});
                 }
             }
-            out.push_back({"│\n", border_style});
+            out.push_back({std::string(bx.mid_right) + "\n", border_style});
         }
 
-        // Bottom border: ╰───────┴─────╯
-        std::string bot = "╰";
+        // Bottom border
+        std::string bot = std::string(bx.bottom_left);
         for (size_t i = 0; i < cols_.size(); ++i) {
-            bot += repeat_box("─", col_widths[i]);
-            bot += (i + 1 < cols_.size()) ? "┴" : "╯\n";
+            bot += repeat_box(bx.bottom, col_widths[i]);
+            bot += (i + 1 < cols_.size()) ? bx.bottom_divider : (std::string(bx.bottom_right) + "\n");
         }
         out.push_back({std::move(bot), border_style});
 
@@ -163,7 +169,7 @@ public:
     }
 
 private:
-    std::string title_;
+    TableOptions options_;
     std::vector<ColumnOptions> cols_;
     std::vector<std::vector<std::string>> rows_;
 };

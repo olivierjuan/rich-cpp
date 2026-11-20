@@ -8,6 +8,11 @@ TEST_CASES = [
     "table_basic",
     "rule_basic",
     "columns_basic",
+    "box_double",
+    "box_heavy",
+    "box_ascii",
+    "text_wrap",
+    "tree_basic",
 ]
 
 def run_python_oracle(test_name: str) -> bytes:
