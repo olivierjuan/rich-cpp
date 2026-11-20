@@ -16,7 +16,6 @@ struct Country {
 int main() {
     using namespace rich;
     using namespace rich::decorator;
-    using namespace rich::panel;
 
     Console console;
 
@@ -37,7 +36,7 @@ int main() {
 
         country_cards.push_back(
             AnyRenderable(StyledText{card_content}) |
-            panel({.title = "[bold bright_white]" + c.name + "[/]", .show_border = true})
+            rich::panel::panel({.title = "[bold bright_white]" + c.name + "[/]", .show_border = true})
         );
     }
 
