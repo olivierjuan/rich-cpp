@@ -43,8 +43,8 @@ This document outlines the phased development of a C++ port of the Rich library,
 ## Phase 6: Ecosystem & Adoption (The Polish)
 *Goal: Enable reliable downstream adoption and long-term maintainability.*
 
-- [ ] **Documentation**: API reference (e.g., Doxygen) and "Getting Started" tutorials.
-- [ ] **Examples**: Comprehensive `examples/` demonstrating real-world usage (e.g., dashboard, log viewer).
-- [ ] **CI/CD**: Automated testing pipeline for multiple platforms (Windows/Linux/macOS) and compiler versions.
-- [ ] **Package Management**: First-class support for `vcpkg`, `Conan`, and `CPM.cmake` for seamless integration.
-- [ ] **Performance**: Micro-benchmarks for `render` and `measure` loops to ensure high-frequency updates remain performant.
+- [x] **Documentation**: API reference (e.g., Doxygen) and "Getting Started" tutorials.
+- [x] **Examples**: Comprehensive `examples/` demonstrating real-world usage (e.g., dashboard, log viewer).
+- [x] **CI/CD**: Automated testing pipeline for multiple platforms (Windows/Linux/macOS) and compiler versions.
+- [x] **Package Management**: First-class support for `vcpkg`, `Conan`, and `CPM.cmake` for seamless integration.
+- [x] **Performance**: Micro-benchmarks for `render` and `measure` loops to ensure high-frequency updates remain performant.
