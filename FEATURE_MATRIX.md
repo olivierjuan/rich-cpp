@@ -22,7 +22,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | `Rule` | `rich.rule` | `rich::Rule`, `Console::rule` | ✅ Done | ✅ Yes | Centered title, dashed box lines, exact byte match |
 | | `Box` styles library | `rich.box` | `rich::box::Box` | ✅ Done | ✅ Yes | `ROUNDED`, `SQUARE`, `HEAVY`, `DOUBLE`, `ASCII` |
 | | `Tree` (hierarchical tree view) | `rich.tree` | `rich::tree::Tree` | ✅ Done | ✅ Yes | Recursive branch guides (`├── `, `└── `, `│   `), exact byte match |
-| | `Layout` (Split grid engine) | `rich.layout` | N/A | ❌ Not Started | ❌ No | Tree-based flexible split-screen layout (rows, cols, ratios) |
+| | `Layout` (Split grid engine) | `rich.layout` | `rich::layout::Layout` | ✅ Done | ✅ Yes | split_row/split_column with fixed size + ratio distribution, exact byte match |
 | | `Align` (Left/Center/Right) | `rich.align` | `rich::align::Align`, `align(Justify)` | ✅ Done | ✅ Yes | Full-width padding parity (`left`, `center`, `right`), exact byte match |
 | | `Constrain` (Max width clamp) | `rich.constrain` | `rich::constrain::Constrain`, `constrain(N)` | ✅ Done | ✅ Yes | Clamps child options width, exact byte match |
 | **Dynamic & Live** | `Progress` bar | `rich.progress` | `rich::progress::ProgressBar` | 🟡 Partial | ❌ No | Block characters (`█`, `░`) and percentage indicator implemented |
@@ -38,7 +38,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | `NO_COLOR` standard | `rich.console` | `no_color_enabled` | ✅ Done | ❌ No | Respects `NO_COLOR` environment variable |
 | | Record / Export (Text) | `rich.console` | `Console::export_text` | ✅ Done | ✅ Yes | Records terminal output to buffer |
 | | Export to HTML / SVG | `rich.console` | N/A | ❌ Not Started | ❌ No | Generates SVG/HTML snapshots of terminal output |
-| | Automated Oracle test suite | Tests | `tests/verify_oracle.py` | ✅ Done | ✅ Yes | 14/14 exact byte-level parity checks with Python Rich |
+| | Automated Oracle test suite | Tests | `tests/verify_oracle.py` | ✅ Done | ✅ Yes | 16/16 exact byte-level parity checks with Python Rich |
 
 ---
 

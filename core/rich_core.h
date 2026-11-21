@@ -8,7 +8,6 @@
 #include <iosfwd>
 #include <memory>
 #include <iostream>
-namespace rich {
 #include <sstream>
 #include <utility>
 #include <cstdint>
@@ -58,6 +57,7 @@ struct RICH_EXPORT Segment {
 struct Options {
     bool show_border{true};
     size_t width{80};
+    size_t height{0}; // 0 = not applicable / auto
 };
 
 class Console;
@@ -83,6 +83,8 @@ public:
     std::pair<size_t, size_t> measure(const Console& con, const Options& opt) const {
         return self_ ? self_->measure(con, opt) : std::pair<size_t, size_t>{0, 0};
     }
+
+    bool empty() const noexcept { return !self_; }
 
 private:
     struct Concept {
@@ -111,6 +113,7 @@ private:
 
 struct ConsoleOptions {
     size_t width{80};
+    size_t height{0}; // 0 = auto-detect (defaults to 25 rows)
     bool record{false};
     bool legacy_windows{false};
 };
@@ -125,6 +128,7 @@ public:
     void rule(std::string_view title = "");
 
     size_t width() const noexcept { return options_.width; }
+    size_t height() const noexcept { return options_.height; }
     std::string export_text() const;
 
 private:

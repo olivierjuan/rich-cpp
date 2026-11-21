@@ -9,22 +9,8 @@
 #include <panel/Table.h>
 #include <panel/Columns.h>
 #include <panel/Tree.h>
+#include <panel/Layout.h>
 #include <iostream>
-int main() {
-    using namespace rich;
-    using namespace rich::panel;
-    using namespace rich::decorator;
-    
-    Console console;
-    
-    // Demonstrate pipe composition
-    // Text is implicitly convertible to AnyRenderable
-    auto content = AnyRenderable(StyledText{"[bold][red]Hello[/red][/bold] from [green]C++ Rich![/green]"});
-    
-    console.print(content | pad(1) | panel("Demo"));
-    
-    return 0;
-}
 
 int main() {
     using namespace rich;
@@ -87,6 +73,27 @@ int main() {
     widgets.add("Tree.h");
     project_tree.add("[bold bright_yellow]CMakeLists.txt[/]");
     console.print(AnyRenderable(project_tree));
+
+    // 6. Layout Dashboard
+    console.rule("Layout Dashboard");
+    {
+        rich::ConsoleOptions dash_opts{.width = 60, .height = 6, .record = true};
+        std::ostringstream dash_oss;
+        rich::Console dash_console(dash_oss, dash_opts);
+        rich::layout::Layout root;
+        std::vector<rich::layout::Layout> dash_children;
+        dash_children.push_back(rich::layout::Layout(rich::layout::LayoutOptions{.name = "side", .size = 20}));
+        dash_children.push_back(rich::layout::Layout(rich::layout::LayoutOptions{.name = "main"}));
+        root.split_row(std::move(dash_children));
+        root.get("side").update(rich::AnyRenderable(
+            rich::panel::Panel(rich::AnyRenderable(rich::Text{"Side panel", {}}),
+                               {.title = "Side", .width = 18, .height = 6})));
+        root.get("main").update(rich::AnyRenderable(
+            rich::panel::Panel(rich::AnyRenderable(rich::Text{"Main area", {}}),
+                               {.title = "Main", .width = 38, .height = 6})));
+        dash_console.print(rich::AnyRenderable(root));
+        std::cout << dash_console.export_text();
+    }
 
     // 5. Progress Bars
     console.rule("Tasks & Progress Bars");

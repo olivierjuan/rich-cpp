@@ -9,6 +9,7 @@ from rich.tree import Tree
 from rich.align import Align
 from rich.constrain import Constrain
 from rich import box
+from rich.layout import Layout
 
 def generate_python_oracle(test_name: str) -> str:
     sink = io.StringIO()
@@ -56,6 +57,22 @@ def generate_python_oracle(test_name: str) -> str:
         c.print(Align.left(Panel("Hello World", width=30)))
     elif test_name == "constrain_basic":
         c.print(Constrain(Panel("Hello World", width=30), 30))
+    elif test_name == "layout_row":
+        c_l = Console(file=sink, width=40, height=8, record=True, legacy_windows=False)
+        root = Layout()
+        root.split_row(Layout(name="left", size=20), Layout(name="right"))
+        root["left"].update(Panel("Left", width=18, height=8))
+        root["right"].update(Panel("Right", width=18, height=8))
+        c_l.print(root)
+        return c_l.export_text()
+    elif test_name == "layout_column":
+        c_l = Console(file=sink, width=40, height=10, record=True, legacy_windows=False)
+        root = Layout()
+        root.split_column(Layout(name="top", ratio=1), Layout(name="bottom", ratio=2))
+        root["top"].update(Panel("Top", width=38, height=3))
+        root["bottom"].update(Panel("Bottom", width=38, height=7))
+        c_l.print(root)
+        return c_l.export_text()
     return c.export_text()
 
 def main():

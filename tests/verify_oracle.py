@@ -17,6 +17,8 @@ TEST_CASES = [
     "align_right",
     "align_left",
     "constrain_basic",
+    "layout_row",
+    "layout_column",
 ]
 
 def run_python_oracle(test_name: str) -> bytes:

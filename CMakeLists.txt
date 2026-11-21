@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
 project(rich LANGUAGES CXX VERSION 0.0.1)
-set(RICH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
 set(RICH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
