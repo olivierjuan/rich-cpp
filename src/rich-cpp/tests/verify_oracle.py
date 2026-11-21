@@ -25,13 +25,9 @@ TEST_CASES = [
     "progress_speed",
 ]
 
-import os
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TESTS = os.path.join(ROOT, "tests")
-
 def run_python_oracle(test_name: str) -> bytes:
     res = subprocess.run(
-        [sys.executable, os.path.join(TESTS, "oracle_gen.py"), test_name],
+        [sys.executable, "tests/oracle_gen.py", test_name],
         capture_output=True,
         check=True
     )
@@ -39,7 +35,7 @@ def run_python_oracle(test_name: str) -> bytes:
 
 def run_cpp_test(test_name: str) -> bytes:
     res = subprocess.run(
-        [os.path.normpath(os.path.join(ROOT, os.pardir, os.pardir, "build", "Release", "test_runner.exe")), test_name],
+        ["./build/Release/test_runner.exe", test_name],
         capture_output=True,
         check=True
     )
