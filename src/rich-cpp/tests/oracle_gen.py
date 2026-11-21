@@ -122,6 +122,14 @@ def generate_python_oracle(test_name: str) -> str:
             clock[0] += 5.0
             prog.update(t1, completed=84)
         return c.export_text()
+    elif test_name == "export_svg":
+        # SVG terminal snapshot: styled markup line + plain line. The default
+        # unique_id is derived deterministically (adler32 of segment reprs +
+        # title), so output is byte-comparable.
+        c2 = Console(file=sink, width=80, record=True, legacy_windows=False)
+        c2.print("[bold red]Hello[/] [on blue]colored[/] [reverse]reversed[/] [dim]dim[/] [italic]it[/] [underline]ul[/]")
+        c2.print("plain")
+        return c2.export_svg(title="Rich")
     return c.export_text()
 
 def main():

@@ -23,6 +23,7 @@ TEST_CASES = [
     "live_static",
     "progress_tracker",
     "progress_speed",
+    "export_svg",
 ]
 
 import os

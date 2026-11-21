@@ -54,6 +54,13 @@ struct RICH_EXPORT Segment {
     Style style;
 };
 
+namespace detail {
+// Sentinel for Python's style=None (plain strings without markup tags and the
+// appended newline). Distinct from an explicit empty Style, which markup gap
+// pieces carry and whose repr must appear in export_svg's unique_id hash.
+RICH_EXPORT const Style& kNoneStyle();
+} // namespace detail
+
 struct Options {
     bool show_border{true};
     size_t width{80};
@@ -146,11 +153,19 @@ public:
     size_t width() const noexcept { return options_.width; }
     size_t height() const noexcept { return options_.height; }
     std::string export_text() const;
+    // Terminal snapshot as SVG (Python Rich Console.export_svg parity).
+    // Requires record=true. title: window caption; unique_id: deterministic
+    // id prefix (default: derived from content via adler32, like Python).
+    std::string export_svg(const std::string& title = "Rich",
+                           const std::string& unique_id = "") const;
+    // Segment-level access to the recorded buffer (styles preserved).
+    const std::vector<Segment>& recorded_segments() const noexcept { return record_segments_; }
 
 private:
     std::ostream& os_;
     ConsoleOptions options_;
     std::string record_buffer_;
+    std::vector<Segment> record_segments_;
 };
 
 // Pipe composition
@@ -177,6 +192,11 @@ struct StyledText {
 };
 RICH_EXPORT std::vector<Segment> parse_markup(std::string_view sv);
 inline std::vector<Segment> render_item(const StyledText& t, const Console&, const Options&) {
+    // Python parity (markup.render): a string with no '[' becomes
+    // Text(text, style="") with no spans → Segment(text) carries style=None,
+    // while markup strings render gap pieces with an explicit empty Style().
+    if (t.content.find('[') == std::string::npos)
+        return {{t.content, detail::kNoneStyle()}};
     return parse_markup(t.content);
 }
 inline std::pair<size_t, size_t> measure_item(const StyledText& t, const Console&, const Options&) {

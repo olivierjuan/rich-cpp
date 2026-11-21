@@ -19,7 +19,7 @@ graph TD
 | **Tier 1** | Core Polish & Text Foundations (Boxes, Wrapping, Terminal Width, NO_COLOR) | 0 (Pure C++20) | ✅ **Completed & Validated (16/16 Oracle)** |
 | **Tier 2** | Advanced Visual Layout (Tree, Align, Constrain, Layout) | 0 (Pure C++20) | ✅ **Completed & Validated (16/16 Oracle)** |
 | **Tier 3** | Dynamic & Live Displays (Progress Bars, Spinners) | 0 (`std::jthread` / VT escapes) | ✅ **Completed & Validated (20/20 Oracle)** |
-| **Tier 4** | Heavy Ecosystem Modules (Markdown, Highlighting, Stacktrace) | Optional 3rd-party (`md4c`, `cpptrace`) | ⚠️ **Optional / Deferrable** |
+| **Tier 4** | Heavy Ecosystem Modules (Markdown, Highlighting, Stacktrace) | Optional 3rd-party (`md4c`, `cpptrace`) | 🔶 **In Progress — SVG Export done (21/21 Oracle)** |
 
 ---
 
@@ -127,16 +127,26 @@ graph TD
 
 ---
 
-## ⚠️ Tier 4: Heavy Ecosystem Modules *(Optional / Deferrable)*
+## 🔶 Tier 4: Heavy Ecosystem Modules *(Optional / Deferrable)*
 *Goal: Provide specialized document rendering or introspection only if strictly needed.*
 *Note: Stop before this tier if zero-dependency and lightweight compilation are priorities.*
+
+### 4.5 SVG Export (`rich::Console::export_svg`) *(Completed - Zero Dependencies)*
+- [x] **Terminal snapshot as SVG (`src/rich-cpp/core/Svg.h` + `rich_core.cpp`)**:
+  - Verbatim port of Python Rich's `CONSOLE_SVG_FORMAT` template (`_export_format.py`).
+  - `SVG_EXPORT_THEME` palette (bg `#292929`, fg `#c5c8c6`, 16 ANSI colors), macOS window chrome (traffic lights, title).
+  - Per-style CSS classes (`r1..rN`), background rects for bgcolor/reverse runs, dim blending, per-line clipPaths.
+  - Deterministic `unique_id` via adler32 of Python-parity `Segment` reprs (+ title) — byte-comparable output.
+- [x] **Record-mode segment buffer**: `Console` now records `Segment`s (styles preserved), not just text.
+- [x] **Markup parity fixes**: `on <color>` background tags (all 16 standard + bright colors) parsed as one tag token; plain strings without `[` record Python's `style=None` sentinel (distinct from markup gap pieces' empty `Style()`) for repr parity.
+- [x] Oracle test: `export_svg` (styled markup line + plain line) — **21/21 byte-exact**.
 
 | Module | Python Rich Equivalent | Proposed C++ Strategy | Dependency Impact | Recommendation |
 | :--- | :--- | :--- | :--- | :--- |
 | **Markdown** | `rich.markdown` | Integrate `md4c` CommonMark parser | Lightweight C library | **Optional**: Integrate as separate CMake target `rich::markdown` |
 | **Syntax Highlighting** | `rich.syntax` | Regex lexer or Tree-Sitter | Heavy grammar binaries | **Defer**: Provide pluggable `Highlighter` interface instead |
 | **Tracebacks** | `rich.traceback` | `cpptrace` or C++23 `<stacktrace>` | Platform symbol resolution | **Nice-to-have**: Standalone CMake target `rich::traceback` |
-| **SVG Export** | `Console.save_svg` | Pure C++ SVG string templating | **0 deps** | **Useful**: Web snapshots of terminal sessions |
+| **SVG Export** | `Console.save_svg` | Pure C++ SVG string templating | **0 deps** | ✅ **Done** (see 4.5) |
 | **Full Unicode Tables** | `rich.cells` | Generate static C++ table or `utf8proc` | Minimal table or 1 C dep | **Only if needed**: For CJK/emoji-heavy tools |
 
 ---

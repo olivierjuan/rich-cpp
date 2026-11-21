@@ -195,6 +195,15 @@ int main(int argc, char* argv[]) {
         auto segs = tracker.render(console, rich::Options{.width = 60}, sec(110));
         for (const auto& s : segs) std::cout << s.text;
         return 0;
+    } else if (test_name == "export_svg") {
+        // SVG terminal snapshot: styled markup line + plain line, mirroring the
+        // Python oracle (record=True, width=80, title="Rich").
+        rich::ConsoleOptions svg_opts{.width = 80, .record = true, .legacy_windows = false};
+        rich::Console svg_console(oss, svg_opts);
+        svg_console.print("[bold red]Hello[/] [on blue]colored[/] [reverse]reversed[/] [dim]dim[/] [italic]it[/] [underline]ul[/]");
+        svg_console.print("plain");
+        std::cout << svg_console.export_svg("Rich");
+        return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
         return 1;
