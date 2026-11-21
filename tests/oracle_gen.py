@@ -6,6 +6,8 @@ from rich.table import Table
 from rich.columns import Columns
 from rich.text import Text
 from rich.tree import Tree
+from rich.align import Align
+from rich.constrain import Constrain
 from rich import box
 
 def generate_python_oracle(test_name: str) -> str:
@@ -46,6 +48,14 @@ def generate_python_oracle(test_name: str) -> str:
         c2.add("Grandchild 2.1")
         t.add("Child 3")
         c.print(t)
+    elif test_name == "align_center":
+        c.print(Align.center(Panel("Hello World", width=30)))
+    elif test_name == "align_right":
+        c.print(Align.right(Panel("Hello World", width=30)))
+    elif test_name == "align_left":
+        c.print(Align.left(Panel("Hello World", width=30)))
+    elif test_name == "constrain_basic":
+        c.print(Constrain(Panel("Hello World", width=30), 30))
     return c.export_text()
 
 def main():

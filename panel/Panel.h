@@ -604,6 +604,45 @@ public:
         for (const auto& line : lines) {
             size_t line_vis_w = 0;
             for (const auto& seg : line) line_vis_w += cell_width(seg.text);
+        auto inner_segs = inner_.render(con, opt);
+
+            if (options_.show_border) out.push_back({std::string(bx.mid_left) + " ", border_style});
+            for (const auto& seg : line) out.push_back(seg);
+        std::vector<std::vector<rich::Segment>> lines;
+        lines.emplace_back();
+
+            if (options_.show_border) {
+                size_t pad = (inner_content_w > line_vis_w) ? (inner_content_w - line_vis_w) : 0;
+                out.push_back({std::string(pad, ' ') + " " + std::string(bx.mid_right) + "\n", border_style});
+            } else {
+                out.push_back({"\n", {}});
+        for (const auto& s : inner_segs) {
+            size_t start = 0;
+            while (start < s.text.size()) {
+                size_t nl = s.text.find('\n', start);
+                if (nl == std::string::npos) {
+                    lines.back().push_back({s.text.substr(start), s.style});
+                    break;
+                } else {
+                    lines.back().push_back({s.text.substr(start, nl - start), s.style});
+                    lines.emplace_back();
+                    start = nl + 1;
+                }
+            }
+        }
+
+            size_t bottom_dashes = (total_w >= 2) ? (total_w - 2) : 0;
+            std::string bot = std::string(bx.bottom_left) + repeat_utf8(bx.bottom, bottom_dashes) + std::string(bx.bottom_right) + "\n";
+            out.push_back({std::move(bot), border_style});
+        if (!lines.empty() && lines.back().empty()) {
+            lines.pop_back();
+        }
+
+        size_t inner_content_w = (total_w >= 4) ? (total_w - 4) : 0;
+
+        for (const auto& line : lines) {
+            size_t line_vis_w = 0;
+            for (const auto& seg : line) line_vis_w += cell_width(seg.text);
 
             if (options_.show_border) out.push_back({std::string(bx.mid_left) + " ", border_style});
             for (const auto& seg : line) out.push_back(seg);

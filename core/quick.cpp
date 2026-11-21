@@ -4,6 +4,8 @@
 #include <ProgressBar.h>
 #include <panel/Panel.h>
 #include <panel/Padding.h>
+#include <panel/Align.h>
+#include <panel/Constrain.h>
 #include <panel/Table.h>
 #include <panel/Columns.h>
 #include <panel/Tree.h>
@@ -33,9 +35,10 @@ int main() {
 
     Console console;
 
-    // Header banner
+    // Header banner (centered via Align decorator)
     auto banner = AnyRenderable(StyledText{"[bold bright_white]Rich C++[/] - [dim]Terminal formatting for modern C++20[/]"});
-    console.print(banner | pad(1) | rich::panel::panel({.title = "Features Showcase", .show_border = true}));
+    console.print(banner | pad(1) | rich::panel::panel({.title = "Features Showcase", .show_border = true})
+                         | rich::align::align(rich::align::Justify::Center));
 
     // 1. Text styles & Colors demo
     console.rule("Text Styling & Colors");

@@ -5,6 +5,8 @@
 #include <panel/Table.h>
 #include <panel/Columns.h>
 #include <panel/Tree.h>
+#include <panel/Align.h>
+#include <panel/Constrain.h>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -87,6 +89,30 @@ int main(int argc, char* argv[]) {
         c2.add("Grandchild 2.1");
         t.add("Child 3");
         console.print(rich::AnyRenderable(t));
+    } else if (test_name == "align_center") {
+        console.print(
+            rich::AnyRenderable(rich::panel::Panel(rich::AnyRenderable(rich::Text{"Hello World", {}}),
+                                                   {.width = 30}))
+                | rich::align::align(rich::align::Justify::Center)
+        );
+    } else if (test_name == "align_right") {
+        console.print(
+            rich::AnyRenderable(rich::panel::Panel(rich::AnyRenderable(rich::Text{"Hello World", {}}),
+                                                   {.width = 30}))
+                | rich::align::align(rich::align::Justify::Right)
+        );
+    } else if (test_name == "align_left") {
+        console.print(
+            rich::AnyRenderable(rich::panel::Panel(rich::AnyRenderable(rich::Text{"Hello World", {}}),
+                                                   {.width = 30}))
+                | rich::align::align(rich::align::Justify::Left)
+        );
+    } else if (test_name == "constrain_basic") {
+        console.print(
+            rich::AnyRenderable(rich::panel::Panel(rich::AnyRenderable(rich::Text{"Hello World", {}}),
+                                                   {.width = 30}))
+                | rich::constrain::constrain(30)
+        );
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
         return 1;

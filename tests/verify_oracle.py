@@ -13,6 +13,10 @@ TEST_CASES = [
     "box_ascii",
     "text_wrap",
     "tree_basic",
+    "align_center",
+    "align_right",
+    "align_left",
+    "constrain_basic",
 ]
 
 def run_python_oracle(test_name: str) -> bytes:
