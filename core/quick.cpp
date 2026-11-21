@@ -2,6 +2,10 @@
 #include <box.h>
 #include <Text.h>
 #include <ProgressBar.h>
+#include <ProgressTracker.h>
+#include <Track.h>
+#include <Live.h>
+#include <Status.h>
 #include <panel/Panel.h>
 #include <panel/Padding.h>
 #include <panel/Align.h>
@@ -10,7 +14,11 @@
 #include <panel/Columns.h>
 #include <panel/Tree.h>
 #include <panel/Layout.h>
+#include <format>
 #include <iostream>
+#include <thread>
+#include <vector>
+#include <chrono>
 
 int main() {
     using namespace rich;
@@ -107,6 +115,50 @@ int main() {
     console.print(AnyRenderable(bar2));
     console.print("[dim bright_white]•[/] [dim]Compressing archives[/]  " + console.export_text().substr(0, 0));
     console.print(AnyRenderable(bar3));
+
+    // 7. Status Spinner (live animation for ~300ms)
+    console.rule("Status Spinner");
+    {
+        rich::status::Status spinner("Processing [bold]files[/]");
+        spinner.start(console);
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        spinner.stop();
+        console.print("[bright_green]✓[/] [bold]Done[/] — status line cleared");
+    }
+
+    // 8. Live Display (in-place refresh of a multi-row ProgressTracker)
+    console.rule("Live Display");
+    {
+        ProgressTracker tracker(/*show_speed=*/true);
+        int r1 = tracker.add_task({.description = "Downloading", .total = 100});
+        int r2 = tracker.add_task({.description = "Processing", .total = 200});
+
+        rich::live::Live live(AnyRenderable(tracker), /*refresh_per_second=*/10);
+        live.start();
+        for (int i = 0; i <= 10; ++i) {
+            tracker.tick(r1, 10);   // 100 total over 10 steps
+            tracker.tick(r2, 20);   // 200 total over 10 steps
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        live.stop();
+        console.print("[bright_green]✓[/] [bold]All tasks complete[/]");
+    }
+
+    // 9. Range tracking (track adapter: one task per loop, tick per element)
+    console.rule("Range Tracking");
+    {
+        ProgressTracker tracker;
+        std::vector<int> items{1, 2, 3, 4, 5, 6, 7, 8};
+        rich::live::Live live(AnyRenderable(tracker), /*refresh_per_second=*/10);
+        live.start();
+        int sum = 0;
+        for (auto& x : rich::progress::track(tracker, "Summing")(items)) {
+            sum += x;
+            std::this_thread::sleep_for(std::chrono::milliseconds(120));
+        }
+        live.stop();
+        console.print(std::format("[bright_green]✓[/] [bold]Done[/] — sum = {}", sum));
+    }
 
     console.rule();
     return 0;

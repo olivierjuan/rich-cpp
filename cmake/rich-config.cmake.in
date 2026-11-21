@@ -1,0 +1,9 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# No external dependencies — rich_core is self-contained.
+
+include("${CMAKE_CURRENT_LIST_DIR}/rich-targets.cmake")
+
+check_required_components(rich)

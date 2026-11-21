@@ -19,6 +19,10 @@ TEST_CASES = [
     "constrain_basic",
     "layout_row",
     "layout_column",
+    "status_static",
+    "live_static",
+    "progress_tracker",
+    "progress_speed",
 ]
 
 def run_python_oracle(test_name: str) -> bytes:

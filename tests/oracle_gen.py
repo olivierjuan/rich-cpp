@@ -73,6 +73,55 @@ def generate_python_oracle(test_name: str) -> str:
         root["bottom"].update(Panel("Bottom", width=38, height=7))
         c_l.print(root)
         return c_l.export_text()
+    elif test_name == "status_static":
+        # Deterministic frame 0 of the "dots" spinner (braille ⠋) with a
+        # markup description — equivalent to Status.__rich__() at t=0.
+        from rich.spinner import Spinner
+        c.print(Spinner("dots", "[bold]Loading[/] data").render(0))
+        return c.export_text()
+    elif test_name == "live_static":
+        # Live's first frame is exactly a plain render of its renderable
+        # (LiveRender renders with pad=False; no padding to console width).
+        # So the reference is just printing the panel normally.
+        p = Panel(Text("Hello World\nLine 2"), width=24, title="Live")
+        c.print(p)
+        return c.export_text()
+    elif test_name == "progress_tracker":
+        # Deterministic Progress via get_time=lambda: 100.0 (fixed clock) and
+        # auto_refresh=False so nothing renders until stop(). Speed/ETA are
+        # unknown ("-:--:--") because no real time elapses between add_task and
+        # update under the frozen clock. This validates OUR format contract
+        # against Python's actual column layout (description, bar, percentage,
+        # ETA) produced by rich.progress.Progress defaults.
+        from rich.progress import Progress
+        prog = Progress(console=c, auto_refresh=False, get_time=lambda: 100.0)
+        t1 = prog.add_task("Downloading", total=100)
+        t2 = prog.add_task("Processing", total=200)
+        with prog:
+            prog.update(t1, completed=42)
+            prog.update(t2, completed=137)
+        return c.export_text()
+    elif test_name == "progress_speed":
+        # Rolling-window speed/ETA. Python's Progress binds get_time at
+        # construction, so the clock must be advanced explicitly before each
+        # update for sample timestamps to differ. Task start at t=100;
+        # advance 5s per update:
+        #   sample (105, 42) then (110, 42) -> speed = 42 / 5 = 8.4 it/s
+        #   (sum skips the first sample); remaining 16 -> ceil(16 / 8.4) = 2
+        #   -> ETA "0:00:02". The second task has a single sample, so its ETA
+        #   is still "-:--:--" (speed needs >= 2 samples with non-zero span).
+        from rich.progress import Progress
+        clock = [100.0]
+        prog = Progress(console=c, auto_refresh=False, get_time=lambda: clock[0])
+        t1 = prog.add_task("Downloading", total=100)
+        t2 = prog.add_task("Processing", total=200)
+        with prog:
+            clock[0] += 5.0
+            prog.update(t1, completed=42)
+            prog.update(t2, completed=137)
+            clock[0] += 5.0
+            prog.update(t1, completed=84)
+        return c.export_text()
     return c.export_text()
 
 def main():

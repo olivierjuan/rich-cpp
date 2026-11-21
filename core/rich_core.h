@@ -74,8 +74,16 @@ public:
 
     template<class T>
     requires Renderable<std::decay_t<T>, Console, Options>
-    AnyRenderable(T&& t)
-        : self_(std::make_shared<Model<std::decay_t<T>>>(std::forward<T>(t))) {}
+    AnyRenderable(const T& t)
+        : self_(std::make_shared<Model<std::decay_t<T>>>(t)) {}
+
+    // Type-erased copy/move: copies the shared model (which owns a copy of T).
+    // For non-copyable T this is only viable at wrap time; subsequent copies
+    // of the AnyRenderable share the same Model instance via shared_ptr.
+    AnyRenderable(const AnyRenderable&) = default;
+    AnyRenderable& operator=(const AnyRenderable&) = default;
+    AnyRenderable(AnyRenderable&&) noexcept = default;
+    AnyRenderable& operator=(AnyRenderable&&) noexcept = default;
 
     std::vector<Segment> render(const Console& con, const Options& opt) const {
         return self_ ? self_->render(con, opt) : std::vector<Segment>{};
@@ -95,8 +103,9 @@ private:
 
     template<class T>
     struct Model final : Concept {
-        template<typename U>
-        explicit Model(U&& t) : t_(std::forward<U>(t)) {}
+        // Owns a copy of the wrapped value. Constructed once at wrap time;
+        // AnyRenderable copies thereafter share this Model via shared_ptr.
+        explicit Model(const T& t) : t_(t) {}
 
         std::vector<Segment> render(const Console& con, const Options& opt) const override {
             return render_item(t_, con, opt);
@@ -126,6 +135,13 @@ public:
     void print(const AnyRenderable& ar);
     void print(std::string_view markup_text);
     void rule(std::string_view title = "");
+
+    // Write raw bytes (VT escapes, etc.) directly to the underlying stream.
+    // Not recorded in export_text(); intended for live animation only.
+    void write_raw(std::string_view text) {
+        os_ << text;
+        os_.flush();
+    }
 
     size_t width() const noexcept { return options_.width; }
     size_t height() const noexcept { return options_.height; }

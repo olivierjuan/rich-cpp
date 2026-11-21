@@ -8,6 +8,9 @@
 #include <panel/Align.h>
 #include <panel/Constrain.h>
 #include <panel/Layout.h>
+#include <Status.h>
+#include <Live.h>
+#include <ProgressTracker.h>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -149,6 +152,48 @@ int main(int argc, char* argv[]) {
                                {.width = 38, .height = 7})));
         l_console.print(rich::AnyRenderable(root));
         std::cout << l_console.export_text();
+        return 0;
+    } else if (test_name == "status_static") {
+        // Deterministic frame 0 of the "dots" spinner with markup description.
+        console.print(rich::AnyRenderable(rich::status::Status("[bold]Loading[/] data")));
+    } else if (test_name == "live_static") {
+        // Live's first frame is a plain render of its renderable (no padding to
+        // console width), so we render the panel directly — byte-identical to
+        // what rich.live.Live would draw on its first tick.
+        console.print(rich::AnyRenderable(
+            rich::panel::Panel(rich::AnyRenderable(rich::Text{"Hello World\nLine 2", {}}),
+                               {.title = "Live", .width = 24})
+        ));
+    } else if (test_name == "progress_tracker") {
+        // Deterministic: fixed injected clock (start at t=0, render at t=0) so
+        // elapsed is zero and speed/ETA are unknown ("-:--:--"), matching the
+        // Python oracle generated with get_time=lambda: 100.0.
+        rich::progress::ProgressTracker tracker;
+        auto t0 = std::chrono::nanoseconds{0};
+        int r1 = tracker.add_task({.description = "Downloading", .total = 100}, t0);
+        int r2 = tracker.add_task({.description = "Processing", .total = 200}, t0);
+        tracker.update(r1, 42, 100, t0);
+        tracker.update(r2, 137, 200, t0);
+        auto segs = tracker.render(console, rich::Options{.width = 60}, t0);
+        for (const auto& s : segs) std::cout << s.text;
+        return 0;
+    } else if (test_name == "progress_speed") {
+        // Rolling-window speed/ETA: task starts at t=100s; the clock advances
+        // 5s before each update so sample timestamps differ (mirroring the
+        // Python oracle's mutable get_time closure).
+        //   samples [(105, 42), (110, 42)] -> speed 8.4 it/s, remaining 16
+        //   -> ceil(16 / 8.4) = 2 -> ETA "0:00:02". The second task has one
+        //   sample, so its ETA stays "-:--:--".
+        using namespace std::chrono;
+        const auto sec = [](double s) { return nanoseconds{static_cast<long long>(s * 1e9)}; };
+        rich::progress::ProgressTracker tracker;
+        int r1 = tracker.add_task({.description = "Downloading", .total = 100}, sec(100));
+        int r2 = tracker.add_task({.description = "Processing", .total = 200}, sec(100));
+        tracker.update(r1, 42, 100, sec(105));
+        tracker.update(r2, 137, 200, sec(105));
+        tracker.update(r1, 84, 100, sec(110));
+        auto segs = tracker.render(console, rich::Options{.width = 60}, sec(110));
+        for (const auto& s : segs) std::cout << s.text;
         return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";

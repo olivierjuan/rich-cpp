@@ -25,9 +25,11 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | `Layout` (Split grid engine) | `rich.layout` | `rich::layout::Layout` | ✅ Done | ✅ Yes | split_row/split_column with fixed size + ratio distribution, exact byte match |
 | | `Align` (Left/Center/Right) | `rich.align` | `rich::align::Align`, `align(Justify)` | ✅ Done | ✅ Yes | Full-width padding parity (`left`, `center`, `right`), exact byte match |
 | | `Constrain` (Max width clamp) | `rich.constrain` | `rich::constrain::Constrain`, `constrain(N)` | ✅ Done | ✅ Yes | Clamps child options width, exact byte match |
-| **Dynamic & Live** | `Progress` bar | `rich.progress` | `rich::progress::ProgressBar` | 🟡 Partial | ❌ No | Block characters (`█`, `░`) and percentage indicator implemented |
-| | `Live` (dynamic terminal refresh) | `rich.live` | N/A | 🟡 Scaffolded | ❌ No | Refresh loop via `std::jthread` in `Progress.h` |
-| | `Status` spinner | `rich.status` | N/A | ❌ Not Started | ❌ No | Braille / Unicode animation frames |
+| **Dynamic & Live** | `Progress` bar | `rich.progress` | `rich::progress::ProgressBar` | ✅ Done | ❌ No | Block characters (`█`, `░`) and percentage indicator; no dedicated oracle case |
+| | `ProgressTracker` (multi-task, speed, ETA) | `rich.progress` | `rich::progress::ProgressTracker` | ✅ Done | ✅ Yes | Half-cell bar, rolling-window speed, ETA; oracle `progress_tracker`, `progress_speed` |
+| | `track()` range adapter | `rich.progress` | `rich::progress::track(tracker, desc)(range)` | ✅ Done | ✅ Yes | Ticks task per iteration; exception-safe; demo in `quick.cpp` §9 |
+| | `Live` (dynamic terminal refresh) | `rich.live` | `rich::live::Live` | ✅ Done | ✅ Yes | In-place VT redraw, non-TTY degradation, transient clear; oracle `live_static` |
+| | `Status` spinner | `rich.status` | `rich::status::Status` | ✅ Done | ✅ Yes | Braille frames, 80 ms interval, deterministic teardown; oracle `status_static` |
 | **Data & Inspection** | `Pretty` print (data structures) | `rich.pretty` | N/A | ❌ Not Started | ❌ No | Pretty printer for `std::vector`, `std::map`, `std::tuple`, structs |
 | | `Syntax` highlighting | `rich.syntax` | `rich::highlight::Highlighter` | 🟡 Scaffolded | ❌ No | Interface defined; Tree-sitter or regex highlighter pending |
 | | `Markdown` rendering | `rich.markdown` | `rich::markdown::parse` | 🟡 Scaffolded | ❌ No | Header stub in place; md4c integration pending |
@@ -38,7 +40,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | `NO_COLOR` standard | `rich.console` | `no_color_enabled` | ✅ Done | ❌ No | Respects `NO_COLOR` environment variable |
 | | Record / Export (Text) | `rich.console` | `Console::export_text` | ✅ Done | ✅ Yes | Records terminal output to buffer |
 | | Export to HTML / SVG | `rich.console` | N/A | ❌ Not Started | ❌ No | Generates SVG/HTML snapshots of terminal output |
-| | Automated Oracle test suite | Tests | `tests/verify_oracle.py` | ✅ Done | ✅ Yes | 16/16 exact byte-level parity checks with Python Rich |
+| | Automated Oracle test suite | Tests | `tests/verify_oracle.py` | ✅ Done | ✅ Yes | 20/20 exact byte-level parity checks with Python Rich |
 
 ---
 
