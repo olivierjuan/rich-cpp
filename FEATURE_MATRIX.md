@@ -40,7 +40,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | `NO_COLOR` standard | `rich.console` | `no_color_enabled` | ✅ Done | ❌ No | Respects `NO_COLOR` environment variable |
 | | Record / Export (Text) | `rich.console` | `Console::export_text` | ✅ Done | ✅ Yes | Records terminal output to buffer |
 | | Export to HTML / SVG | `rich.console` | N/A | ❌ Not Started | ❌ No | Generates SVG/HTML snapshots of terminal output |
-| | Automated Oracle test suite | Tests | `tests/verify_oracle.py` | ✅ Done | ✅ Yes | 20/20 exact byte-level parity checks with Python Rich |
+| | Automated Oracle test suite | Tests | `src/rich-cpp/tests/verify_oracle.py` | ✅ Done | ✅ Yes | 20/20 exact byte-level parity checks with Python Rich |
 
 ---
 

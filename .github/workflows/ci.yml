@@ -39,7 +39,7 @@ jobs:
       - name: Run oracle suite (Linux only — needs Python Rich)
         if: matrix.os == 'ubuntu-latest'
         shell: bash
-        run: .venv/bin/python tests/verify_oracle.py
+        run: .venv/bin/python src/rich-cpp/tests/verify_oracle.py
 
       - name: Run test_runner
         shell: bash
@@ -57,7 +57,7 @@ jobs:
       - name: Downstream find_package smoke test
         shell: bash
         run: |
-          cmake -B build/smoke -S examples/find_package_smoke \
+          cmake -B build/smoke -S src/rich-cpp/examples/find_package_smoke \
                 -DCMAKE_PREFIX_PATH="$(pwd)/build/install" \
                 -DCMAKE_BUILD_TYPE=Release
           cmake --build build/smoke --config Release

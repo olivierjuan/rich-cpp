@@ -53,7 +53,7 @@ graph TD
   - Exact whitespace and trailing newline parity with Python Rich text wrapping.
 
 ### 1.3 Box Style Library (`rich::box`)
-- [x] **Box Presets (`core/box.h`)**:
+- [x] **Box Presets (`src/rich-cpp/core/box.h`)**:
   - `box::ROUNDED` (`╭─╮│╰─╯`)
   - `box::SQUARE` (`┌─┐│└─┘`)
   - `box::HEAVY` (`┏━┓┃┗━┛`)
@@ -70,16 +70,16 @@ graph TD
 *Goal: Deliver full visual dashboard and structural composition capabilities.*
 
 ### 2.1 `Tree` Widget (`rich::tree::Tree`)
-- [x] **Hierarchical Data Visualization (`panel/Tree.h`)**:
+- [x] **Hierarchical Data Visualization (`src/rich-cpp/panel/Tree.h`)**:
   - Nested tree branches with guide glyphs (`├── `, `└── `, `│   `).
   - Arbitrary labels with inline markup parsing.
   - Verified bit-for-bit against Python Rich `Tree` (Oracle test `tree_basic`).
 
 ### 2.2 `Align` & `Constrain` Decorators
-- [x] **`Align` (`panel/Align.h`)**: Wrapper to horizontally center, left-align, or right-align any renderable within console width.
+- [x] **`Align` (`src/rich-cpp/panel/Align.h`)**: Wrapper to horizontally center, left-align, or right-align any renderable within console width.
   - Syntax: `panel(...) | align(Justify::Center)`
   - Line normalization + padding parity with Python `Align` (Oracle tests `align_center`, `align_right`, `align_left`).
-- [x] **`Constrain` (`panel/Constrain.h`)**: Clamp maximum width of any nested renderable.
+- [x] **`Constrain` (`src/rich-cpp/panel/Constrain.h`)**: Clamp maximum width of any nested renderable.
   - Syntax: `table | constrain(60)`
   - Verified bit-for-bit against Python `Constrain` (Oracle test `constrain_basic`).
 
@@ -89,7 +89,7 @@ graph TD
   - `layout.split_column(...)` (vertical division).
   - Proportional sizing via `ratio` (e.g. 1:2 split).
   - Fixed-size constraints (`size = 10`).
-- [x] **`Layout` (`panel/Layout.h`)**: recursive region division via `split_row` / `split_column`, fixed `size` + proportional `ratio` distribution (Python `ratio_resolve` parity), named sub-layout lookup (`get("name")`). Verified bit-for-bit against Python Rich (Oracle tests `layout_row`, `layout_column`).
+- [x] **`Layout` (`src/rich-cpp/panel/Layout.h`)**: recursive region division via `split_row` / `split_column`, fixed `size` + proportional `ratio` distribution (Python `ratio_resolve` parity), named sub-layout lookup (`get("name")`). Verified bit-for-bit against Python Rich (Oracle tests `layout_row`, `layout_column`).
 
 ---
 
@@ -97,16 +97,16 @@ graph TD
 *Goal: Support in-place terminal redraws, progress bars, and status spinners.*
 
 ### 3.1 Smooth Progress Bar (`rich::progress`)
-- [x] **Block Progress Bar (`core/ProgressBar.h`)**:
+- [x] **Block Progress Bar (`src/rich-cpp/core/ProgressBar.h`)**:
   - Fraction block characters: `█` (filled) and `░` (empty).
   - Percentage indicator with aligned padding.
-- [x] **Multi-Column Progress Tracker (`core/ProgressTracker.h`)**:
+- [x] **Multi-Column Progress Tracker (`src/rich-cpp/core/ProgressTracker.h`)**:
   - Half-cell bar rendering (`━`×N + optional `╸`) matching Python Rich's `ProgressBar` exactly.
   - Rolling-window speed estimation (30 s window, deque of `(timestamp, delta)` samples).
   - ETA estimator: `ceil(remaining / speed)` formatted as `H:MM:SS`; `-:--:--` when unknown.
   - Table.grid column-width algorithm for multi-task layout (bar preferred width 40, shrink-wrap).
   - Oracle tests: `progress_tracker` (frozen clock), `progress_speed` (advancing clock, speed 8.4 it/s, ETA `0:00:02`).
-- [x] **Range Tracking Adapter (`core/Track.h`)**:
+- [x] **Range Tracking Adapter (`src/rich-cpp/core/Track.h`)**:
   - `track(tracker, "desc")(range)` returns a `TrackRange` that ticks the task on each iteration.
   - Usage: `for (auto& x : track(tracker, "Processing")(items)) { ... }`
   - Verified: 100% / `0:00:00` on full loop; exception-safe mid-loop at 60%.
