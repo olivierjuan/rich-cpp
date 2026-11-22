@@ -600,6 +600,45 @@ int main(int argc, char* argv[]) {
         sc.print(rich::AnyRenderable(s2));
         std::cout << sc.export_text();
         return 0;
+    } else if (test_name == "control_basic") {
+        // Control bytes reach the stream only for terminals (force_terminal);
+        // export_text() filters control segments, so compare stream bytes.
+        // Console.control() is a no-op on dumb terminals — mirror the Python
+        // _environ override by setting TERM for this process.
+#ifdef _WIN32
+        _putenv_s("TERM", "xterm-256color");
+#else
+        setenv("TERM", "xterm-256color", 1);
+#endif
+        rich::ConsoleOptions co{.width = 60, .height = 25, .record = true,
+                                .legacy_windows = false,
+                                .force_terminal = true,
+                                .no_color = false};
+        std::ostringstream o1;
+        rich::Console c1(o1, co);
+        c1.print(rich::AnyRenderable(rich::Control::bell()));
+        c1.print(rich::AnyRenderable(rich::Control::home()));
+        c1.print(rich::AnyRenderable(rich::Control::move(2, 3)));
+        c1.print(rich::AnyRenderable(rich::Control::move(-1, -2)));
+        c1.print(rich::AnyRenderable(rich::Control::move_to(4, 5)));
+        c1.print(rich::AnyRenderable(rich::Control::move_to_column(7)));
+        c1.print(rich::AnyRenderable(rich::Control::move_to_column(7, 2)));
+        c1.print(rich::AnyRenderable(rich::Control::clear()));
+        c1.print(rich::AnyRenderable(rich::Control::show_cursor(false)));
+        c1.print(rich::AnyRenderable(rich::Control::alt_screen(true)));
+        c1.print(rich::AnyRenderable(rich::Control::title(std::string("hello"))));
+        c1.print(rich::AnyRenderable(
+            rich::Control(std::vector<rich::ControlCode>{{rich::ControlType::EraseInLine, 2}})));
+        std::string out = o1.str();
+        std::ostringstream o2;
+        rich::Console c2(o2, co);
+        c2.control(rich::Control::move(1, 1));
+        c2.control(rich::Control::home());
+        out += "SEP" + o2.str();
+        out += "SEPesc:" + rich::escape_control_codes(std::string("\a\b\v\f\r")) +
+               "|st:" + rich::strip_control_codes(std::string("a\ab\b\fc")) + "|";
+        std::cout << out;
+        return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
         return 1;

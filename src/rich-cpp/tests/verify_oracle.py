@@ -46,6 +46,7 @@ TEST_CASES = [
     "theme_push",
     "capture_basic",
     "screen_basic",
+    "control_basic",
 ]
 
 import os

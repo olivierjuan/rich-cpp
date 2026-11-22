@@ -291,6 +291,7 @@ private:
 // Forward declarations (defined below Console, used as its return types).
 class Capture;
 class ScreenContext;
+class Control;
 
 class RICH_EXPORT Console {
 public:
@@ -339,6 +340,11 @@ public:
         os_ << text;
         os_.flush();
     }
+
+    // Python Console.control: render a Control renderable through the normal
+    // output path (written to the stream, recorded, and captured like any
+    // print). No-op on a dumb terminal (Python Console.control guard).
+    void control(const Control& c);
 
     size_t width() const noexcept { return options_.width; }
     size_t height() const noexcept { return options_.height; }
@@ -462,6 +468,73 @@ inline std::pair<size_t, size_t> measure_item(const Screen& screen, const Consol
     (void)screen;
     return {opt.width, (con.height() > 0) ? con.height() : 25};
 }
+
+// Python rich.segment.ControlType — the control codes rich renders.
+enum class ControlType {
+    Bell,               // \x07
+    CarriageReturn,     // \r
+    Home,               // ESC[H
+    Clear,              // ESC[2J
+    ShowCursor,         // ESC[?25h
+    HideCursor,         // ESC[?25l
+    EnableAltScreen,    // ESC[?1049h
+    DisableAltScreen,   // ESC[?1049l
+    CursorUp,           // ESC[{n}A
+    CursorDown,         // ESC[{n}B
+    CursorForward,      // ESC[{n}C
+    CursorBackward,     // ESC[{n}D
+    CursorMoveToColumn, // ESC[{x+1}G
+    CursorMoveTo,       // ESC[{y+1};{x+1}H
+    EraseInLine,        // ESC[{mode}K] (0..2)
+    SetWindowTitle,     // ESC]0;{title}\x07
+};
+
+// Python rich.segment.ControlCode: (ControlType, *parameters).
+struct RICH_EXPORT ControlCode {
+    ControlType type{ControlType::Home};
+    int param{0};      // n / x / erase mode / column
+    int param2{0};     // CursorMoveTo: y
+    std::string title; // SetWindowTitle
+};
+
+// Python rich.control.Control: a renderable that inserts raw control codes.
+// Rendered as a single style-None segment; empty renders nothing.
+class RICH_EXPORT Control {
+public:
+    Control() = default;
+    explicit Control(std::vector<ControlCode> codes);
+
+    static Control bell();
+    static Control home();
+    static Control move(int x = 0, int y = 0);
+    static Control move_to_column(int x, int y = 0);
+    static Control move_to(int x, int y);
+    static Control clear();
+    static Control show_cursor(bool show);
+    static Control alt_screen(bool enable);  // enable -> also Home
+    static Control title(std::string title);
+
+    // Python Control.__str__: the rendered escape bytes.
+    std::string str() const noexcept { return text_; }
+    bool empty() const noexcept { return text_.empty(); }
+
+private:
+    std::string text_;
+};
+inline std::vector<Segment> render_item(const Control& c, const Console&, const Options&) {
+    return c.empty() ? std::vector<Segment>{}
+                     : std::vector<Segment>{{c.str(), detail::kNoneStyle()}};
+}
+inline std::pair<size_t, size_t> measure_item(const Control& c, const Console&,
+                                              const Options&) {
+    // Python Control has no __rich_measure__; codes are non-printing.
+    (void)c;
+    return {0, 0};
+}
+
+// Python rich.control module helpers (operate on raw control bytes 7,8,11,12,13).
+RICH_EXPORT std::string strip_control_codes(std::string_view text);
+RICH_EXPORT std::string escape_control_codes(std::string_view text);
 
 // Python rich.console.ScreenContext: RAII wrapper for Console::screen().
 // Enters the alt screen on construction (and hides the cursor), leaves it in

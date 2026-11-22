@@ -4,6 +4,7 @@
 #include "Emoji.h"
 #include <sstream>
 #include <cstdlib>
+#include <cstdio>
 #include <cctype>
 #include <cmath>
 #include <array>
@@ -470,19 +471,20 @@ ScreenContext::ScreenContext(Console& c, bool hide_cursor, std::string style)
     : console_(&c), screen_{{}, std::move(style), false},
       hide_cursor_(hide_cursor), changed_(false) {
     // Python ScreenContext.__enter__ -> set_alt_screen(True) + show_cursor:
-    // the control codes go to the stream only for a real terminal.
+    // control codes reach the stream only for a real terminal (and are
+    // recorded, like any print — Console::control routes through emit).
     if (console_->is_terminal() && !console_->legacy_windows() &&
         !console_->is_dumb_terminal()) {
-        console_->write_raw("\x1b[?1049h");
+        console_->control(Control::alt_screen(true));
         changed_ = true;
-        if (hide_cursor_) console_->write_raw("\x1b[?25l");
+        if (hide_cursor_) console_->control(Control::show_cursor(false));
     }
 }
 
 ScreenContext::~ScreenContext() {
     if (console_ && changed_) {
-        console_->write_raw("\x1b[?1049l");
-        if (hide_cursor_) console_->write_raw("\x1b[?25h");
+        console_->control(Control::alt_screen(false));
+        if (hide_cursor_) console_->control(Control::show_cursor(true));
     }
 }
 
@@ -499,6 +501,108 @@ void ScreenContext::update(std::vector<AnyRenderable> renderables,
 
 ScreenContext Console::screen(bool hide_cursor, std::string style) {
     return ScreenContext(*this, hide_cursor, std::move(style));
+}
+
+namespace {
+// Python rich.control.CONTROL_CODES_FORMAT — render one ControlCode.
+std::string render_control_code(const ControlCode& c) {
+    char buf[32];
+    switch (c.type) {
+        case ControlType::Bell: return "\x07";
+        case ControlType::CarriageReturn: return "\r";
+        case ControlType::Home: return "\x1b[H";
+        case ControlType::Clear: return "\x1b[2J";
+        case ControlType::ShowCursor: return "\x1b[?25h";
+        case ControlType::HideCursor: return "\x1b[?25l";
+        case ControlType::EnableAltScreen: return "\x1b[?1049h";
+        case ControlType::DisableAltScreen: return "\x1b[?1049l";
+        case ControlType::CursorUp:
+            std::snprintf(buf, sizeof buf, "\x1b[%dA", c.param); return buf;
+        case ControlType::CursorDown:
+            std::snprintf(buf, sizeof buf, "\x1b[%dB", c.param); return buf;
+        case ControlType::CursorForward:
+            std::snprintf(buf, sizeof buf, "\x1b[%dC", c.param); return buf;
+        case ControlType::CursorBackward:
+            std::snprintf(buf, sizeof buf, "\x1b[%dD", c.param); return buf;
+        case ControlType::CursorMoveToColumn:
+            std::snprintf(buf, sizeof buf, "\x1b[%dG", c.param + 1); return buf;
+        case ControlType::EraseInLine:
+            std::snprintf(buf, sizeof buf, "\x1b[%dK", c.param); return buf;
+        case ControlType::CursorMoveTo:
+            std::snprintf(buf, sizeof buf, "\x1b[%d;%dH", c.param2 + 1, c.param + 1);
+            return buf;
+        case ControlType::SetWindowTitle:
+            return std::string("\x1b]0;") + c.title + "\x07";
+    }
+    return "";
+}
+} // namespace
+
+Control::Control(std::vector<ControlCode> codes) {
+    for (const auto& c : codes) text_ += render_control_code(c);
+}
+Control Control::bell() { return Control({{ControlType::Bell}}); }
+Control Control::home() { return Control({{ControlType::Home}}); }
+Control Control::move(int x, int y) {
+    std::vector<ControlCode> codes;
+    if (x) codes.push_back({x > 0 ? ControlType::CursorForward : ControlType::CursorBackward, std::abs(x)});
+    if (y) codes.push_back({y > 0 ? ControlType::CursorDown : ControlType::CursorUp, std::abs(y)});
+    return Control(std::move(codes));
+}
+Control Control::move_to_column(int x, int y) {
+    if (y)
+        return Control({{ControlType::CursorMoveToColumn, x},
+                        {y > 0 ? ControlType::CursorDown : ControlType::CursorUp, std::abs(y)}});
+    return Control({{ControlType::CursorMoveToColumn, x}});
+}
+Control Control::move_to(int x, int y) {
+    return Control({{ControlType::CursorMoveTo, x, y}});
+}
+Control Control::clear() { return Control({{ControlType::Clear}}); }
+Control Control::show_cursor(bool show) {
+    return Control({{show ? ControlType::ShowCursor : ControlType::HideCursor}});
+}
+Control Control::alt_screen(bool enable) {
+    if (enable) return Control({{ControlType::EnableAltScreen}, {ControlType::Home}});
+    return Control({{ControlType::DisableAltScreen}});
+}
+Control Control::title(std::string title) {
+    ControlCode c{ControlType::SetWindowTitle};
+    c.title = std::move(title);
+    return Control({c});
+}
+
+void Console::control(const Control& c) {
+    // Python Console.control: guard on is_dumb_terminal only (a non-terminal
+    // file still receives the codes); the segment renders style-None, so
+    // emit_segments writes the raw bytes, records, and captures it.
+    if (is_dumb_terminal() || c.empty()) return;
+    emit_segments({{c.str(), detail::kNoneStyle()}});
+}
+
+std::string strip_control_codes(std::string_view text) {
+    // Python rich.control.strip_control_codes: drop bytes 7,8,11,12,13.
+    std::string out;
+    out.reserve(text.size());
+    for (char c : text)
+        if (c != 7 && c != 8 && c != 11 && c != 12 && c != 13) out.push_back(c);
+    return out;
+}
+std::string escape_control_codes(std::string_view text) {
+    // Python rich.control.escape_control_codes: 7->\a 8->\b 11->\v 12->\f 13->\r.
+    std::string out;
+    out.reserve(text.size() * 2);
+    for (char c : text) {
+        switch (c) {
+            case 7: out += "\\a"; break;
+            case 8: out += "\\b"; break;
+            case 11: out += "\\v"; break;
+            case 12: out += "\\f"; break;
+            case 13: out += "\\r"; break;
+            default: out.push_back(c);
+        }
+    }
+    return out;
 }
 
 void Console::print(const AnyRenderable& ar) {

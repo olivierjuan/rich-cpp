@@ -399,6 +399,43 @@ def generate_python_oracle(test_name: str) -> str:
         c5.print(Screen(Panel(Text("Hi"), width=20)))
         c5.print(Screen(Text("l1\nl2\nl3\nl4\nl5\nl6\nl7")))
         return c5.export_text()
+    elif test_name == "control_basic":
+        # Control codes: bytes land in the file only for terminals
+        # (force_terminal); export_text() filters control segments by
+        # default, so compare the stream bytes. The Console.control() path
+        # is no-op on dumb terminals — override TERM via _environ.
+        import os
+        from rich.control import Control, escape_control_codes, strip_control_codes
+        from rich.segment import ControlType
+        sink6 = io.StringIO()
+        c6 = Console(file=sink6, width=60, height=25, force_terminal=True,
+                     record=True, no_color=False, legacy_windows=False)
+        c6.print(Control.bell())
+        c6.print(Control.home())
+        c6.print(Control.move(2, 3))
+        c6.print(Control.move(-1, -2))
+        c6.print(Control.move_to(4, 5))
+        c6.print(Control.move_to_column(7))
+        c6.print(Control.move_to_column(7, 2))
+        c6.print(Control.clear())
+        c6.print(Control.show_cursor(False))
+        c6.print(Control.alt_screen(True))
+        c6.print(Control.title("hello"))
+        c6.print(Control((ControlType.ERASE_IN_LINE, 2)))
+        part1 = sink6.getvalue()
+        env = dict(os.environ)
+        env["TERM"] = "xterm-256color"
+        sink7 = io.StringIO()
+        c7 = Console(file=sink7, width=60, height=25, force_terminal=True,
+                     record=True, no_color=False, legacy_windows=False, _environ=env)
+        c7.control(Control.move(1, 1))
+        c7.control(Control.home())
+        part2 = sink7.getvalue()
+        part3 = (
+            "esc:" + escape_control_codes("\x07\x08\x0b\x0c\r")
+            + "|st:" + strip_control_codes("a\x07b\x08c") + "|"
+        )
+        return part1 + "SEP" + part2 + "SEP" + part3
     return c.export_text()
 
 def main():
