@@ -13,17 +13,17 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | `Renderable` protocol | `rich.protocol` | `rich::Renderable` (C++20 Concept) | ✅ Done | ✅ Yes | Non-intrusive ADL dispatch (`render_item`, `measure_item`) |
 | | Type-erased wrapper | Python Duck Typing | `rich::AnyRenderable` | ✅ Done | ✅ Yes | Value-semantic wrapper (`std::shared_ptr<const Concept>`) |
 | | Fluent / Pipe syntax | N/A (Python decorators) | `operator\|` | ✅ Done | ✅ Yes | `content \| pad(1) \| panel({...})`; exercised by `padding_basic` |
-| | `Console.log()` (timestamp/path/level log lines) | `rich.console`, `rich._log_render` | — | ❌ Not Started | ❌ No | `log()` method + log-line rendering (time, optional file:line, level word, message) |
+| | `Console.log()` (timestamp/path/level log lines) | `rich.console`, `rich._log_render` | — | ❌ Not Started | 🚫 | `log()` method + log-line rendering (time, optional file:line, level word, message); wall-clock timestamp makes output nondeterministic |
 | | Theme system (style-name mapping, `push_theme`/`pop_theme`) | `rich.theme`, `rich.default_styles` | — | ❌ Not Started | ❌ No | Console-level named-style overrides; Markdown has an internal theme table, no console-wide `Theme` |
-| | `Console.input()` (styled prompt input) | `rich.console` | — | ❌ Not Started | ❌ No | Interactive input with prompt markup |
+| | `Console.input()` (styled prompt input) | `rich.console` | — | ❌ Not Started | 🚫 | Interactive stdin read with prompt markup; not a pure render, not reproducible in CI |
 | | `Console.capture()` / `screen()` + `Screen` (alt screen buffer) | `rich.console`, `rich.screen` | — | ❌ Not Started | ❌ No | In-memory render capture; alternate-screen renderable |
 | | Control-code API (cursor move/erase/home, show/hide cursor, beep) | `rich.control` | — | ❌ Not Started | ❌ No | Public control-code module; Live/Status emit raw VT escapes inline instead |
 | | Color-file / palette loading | `rich.colorfile`, `rich.palette` | — | ❌ Not Started | ❌ No | Color definitions from files; feeds the theme system |
 | | File-proxy utilities (`FileProxy`, `FileFilter`, `NullFile`) | `rich.file_proxy`, `rich._null_file` | — | ❌ Not Started | ❌ No | I/O redirect / regex filter / null-stream helpers |
 | | Self-diagnostics / object inspection | `rich.diagnose`, `rich._inspect` | — | ❌ Not Started | ❌ No | Niche: `diagnose()` report, `inspect()` renderable |
-| | `scope()` (local/instance/global variable dump) | `rich.scope` | — | 🚫 Not portable | — | C++ has no runtime introspection of local/instance/global variables |
-| | Jupyter / IPython integration (`JupyterMixin`, IPython extension, pager) | `rich.jupyter`, `rich._extension`, `rich.pager` | — | 🚫 N/A | — | Python-IPython ecosystem only |
-| | Logging handler (`RichHandler` / `LogHandler`) | `rich.logging` | — | 🚫 N/A | — | Wraps Python's `logging` module; the portable part (`Console.log()`) is the row above |
+| | `scope()` (local/instance/global variable dump) | `rich.scope` | — | 🚫 Not portable | 🚫 | C++ has no runtime introspection of local/instance/global variables |
+| | Jupyter / IPython integration (`JupyterMixin`, IPython extension, pager) | `rich.jupyter`, `rich._extension`, `rich.pager` | — | 🚫 N/A | 🚫 | Python-IPython ecosystem only |
+| | Logging handler (`RichHandler` / `LogHandler`) | `rich.logging` | — | 🚫 N/A | 🚫 | Wraps Python's `logging` module; the portable part (`Console.log()`) is the row above |
 | **Markup & Text** | Inline markup `[bold red]...[/]` | `rich.markup` | `rich::parse_markup`, `StyledText` | ✅ Done | ✅ Yes | RE_TAGS grammar port: tag = `[` + `[a-z#/@]` start + `]`; `\[` escape, non-tag brackets literal, unknown tags → empty style, `[/]`/`[/name]` closes (aliases canonicalized), `on <color>` backgrounds; oracle `markup_basic` |
 | | Text formatting & wrapping | `rich.text` | `rich::text::Text` | ✅ Done | ✅ Yes | Soft word wrapping matching Python Rich output |
 | | Unicode Cell Width Calculation | `rich.cells` | `cell_width` / `visual_width` | ✅ Done | ✅ Yes | Generated East-Asian width table + ZWJ/VS16 handling (`CellTable.h`); oracles `text_wrap_cjk`, `text_wrap_emoji` |
@@ -54,18 +54,18 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | `Pretty` print (data structures) | `rich.pretty` | `rich::pretty::pretty` | ✅ Done | ✅ Yes | Node/expand layout parity for sequences, maps, pairs/tuples, optionals, scalars; oracles `pretty_list`, `pretty_dict`, `pretty_scalars`, `pretty_options` |
 | | `Syntax` highlighting | `rich.syntax` | `rich::highlight::Syntax` | ✅ Done | ✅ Yes | Monokai theme; python/cpp/json/text lexers (regex); `SyntaxOptions.padding`; oracle `syntax_basic` |
 | | `Markdown` rendering | `rich.markdown` | `rich::markdown::markdown(doc, hyperlinks)` | ✅ Done | ✅ Yes | Zero-dep CommonMark subset: headings, paragraphs, bullets/ordered lists (nesting), quotes, fenced code, tables, inline bold/italic/code/strike/links/kbd; theme table; oracles `markdown_basic` (byte-exact vs Python) |
-| | `Traceback` (pretty stack traces) | `rich.traceback` | `rich::traceback::print_current_trace` / `capture_stack` | ✅ Done | ❌ No | Win32 `CaptureStackBackTrace` + psapi module table + DbgHelp symbol names (local PDBs, explicit `SymLoadModule64`); graceful module+offset fallback without symbols; no byte-exact oracle (addresses nondeterministic) |
+| | `Traceback` (pretty stack traces) | `rich.traceback` | `rich::traceback::print_current_trace` / `capture_stack` | ✅ Done | 🚫 | Win32 `CaptureStackBackTrace` + psapi module table + DbgHelp symbol names (local PDBs, explicit `SymLoadModule64`); graceful module+offset fallback without symbols; no byte-exact oracle (addresses/symbols nondeterministic) |
 | | `JSON` viewer | `rich.json` | `rich::json::json` | ✅ Done | ✅ Yes | Recursive-descent parser + syntax-colored tree rendering; oracle `json_basic` |
 | | `Progress` custom columns (9 `ProgressColumn` classes), `pulse`, transfer mode | `rich.progress`, `rich.progress_bar` | — | ❌ Not Started | ❌ No | `SpinnerColumn`, `TextColumn`, `BarColumn`, `TimeElapsedColumn`, `TimeRemainingColumn`, `FileSizeColumn`, `TotalFileSizeColumn`, `RenderableColumn`; pulsing indeterminate bar; file-transfer speed display. C++ `ProgressTracker` is a fixed 4-column layout |
 | | Spinner registry (73 named animations + custom `Spinner`) | `rich.spinner`, `rich._spinners` | — | ❌ Not Started | ❌ No | `dots2`…`moon`, `tiny`, … + user-defined frames/interval; C++ ships 2 (`dots`, `line`) in `Status.h` |
 | | `Live` extras: `screen` mode, `vertical`, `refresh_per_second` | `rich.live` | — | ❌ Not Started | ❌ No | Alternate-screen live region; vertical growth; configurable refresh rate |
-| | `Pretty` struct introspection | `rich.pretty` | — | 🚫 Not portable | — | No `__rich_repr__`-style runtime field introspection in C++; containers/scalars are covered (see Pretty row) |
+| | `Pretty` struct introspection | `rich.pretty` | — | 🚫 Not portable | 🚫 | No `__rich_repr__`-style runtime field introspection in C++; containers/scalars are covered (see Pretty row) |
 | | `Pretty` `ReprHighlighter` coloring | `rich.pretty`, `rich.highlighter` | — | ❌ Not Started | ❌ No | Syntax-colored repr output |
 | | `Syntax` extended coverage: ~70 Pygments lexers, ~20 themes, `line_numbers`, `start_line`, `word_wrap`, `tab_size`, `elide_lines` | `rich.syntax` | — | ❌ Not Started | ❌ No | C++ has 4 regex lexers (python/cpp/json/text) and the monokai theme |
 | | `Markdown` extras: task-list checkboxes, footnotes, reference-style links, table column alignment, setext (`==`) headings | `rich.markdown` | — | ❌ Not Started | ❌ No | Fenced code blocks *do* get `Syntax` highlighting (language detected from the fence info string) |
 | | `filesize()` / `Number` renderables | `rich.filesize`, `rich.numbers` | — | ❌ Not Started | ❌ No | Unit-formatted sizes (decimal/binary); numbers with digit grouping + alignment |
 | **System & Platform** | Windows VT / UTF-8 auto-init | `rich._windows` | `rich::platform::enable_vt` | ✅ Done | ✅ Yes | Automatic `CP_UTF8` and `ENABLE_VIRTUAL_TERMINAL_PROCESSING` |
-| | Auto terminal size detection | `rich.console` | `detect_terminal_width` | ✅ Done | ❌ No | Windows CSBI (`GetConsoleScreenBufferInfo`) + POSIX `ioctl` |
+| | Auto terminal size detection | `rich.console` | `detect_terminal_width` | ✅ Done | 🚫 | Windows CSBI (`GetConsoleScreenBufferInfo`) + POSIX `ioctl`; value depends on the live terminal, not reproducible in CI |
 | | `NO_COLOR` standard | `rich.console` | `no_color_enabled` | ✅ Done | ❌ No | Respects `NO_COLOR` environment variable |
 | | Record / Export (Text) | `rich.console` | `Console::export_text` | ✅ Done | ✅ Yes | Records terminal output to buffer |
 | | Export to SVG | `rich.console` | `Console::export_svg` | ✅ Done | ✅ Yes | SVG terminal snapshot (`CONSOLE_SVG_FORMAT` port, `unique_id` from segment-repr adler32) |
@@ -81,7 +81,13 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 - ❌ **Not Started**: Not implemented; portable to C++ and a candidate for future work.
 - 🚫 **Not portable / N/A**: Not feasible in C++ (no runtime introspection) or specific to the Python ecosystem (IPython, `logging` module).
 
+**"Verified vs Oracle" column**
+- ✅ — byte-exact in the automated suite.
+- ❌ — oracle-able (deterministic render), but not yet checked.
+- 🚫 — oracle impossible: nondeterministic output (Traceback addresses/symbols, wall-clock timestamps), live-environment state (terminal size), interactive I/O (`Console.input()`), or not portable to C++.
+
 ### Coverage summary
-- **36 oracle cases** (36/36 byte-exact) cover every ✅ row.
+- **36 oracle cases** (36/36 byte-exact) cover every deterministic ✅ row.
 - **25 rows ❌ Not Started** — portable but not implemented (largest: Progress custom columns, spinner registry, themes, `Text.from_ansi`, 256-color palette, Syntax lexer/theme breadth, Table/Panel decoration).
-- **4 rows 🚫** — `scope()`, Jupyter/IPython, `logging` handler, `Pretty` struct introspection.
+- **4 rows 🚫** (Status) — `scope()`, Jupyter/IPython, `logging` handler, `Pretty` struct introspection.
+- **8 rows 🚫** (Oracle column) — Traceback, terminal-size detection, `Console.log()`, `Console.input()`, + the 4 not-portable rows: byte-exact verification not possible.
