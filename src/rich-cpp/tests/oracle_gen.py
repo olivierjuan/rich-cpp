@@ -499,6 +499,22 @@ def generate_python_oracle(test_name: str) -> str:
             + str(NULL_FILE.seek(123))
         )
         return out
+    elif test_name == "from_ansi_basic":
+        # rich.text.Text.from_ansi (AnsiDecoder): SGR state machine,
+        # 256/truecolor colors, lenient invalid codes, CR truncation,
+        # multi-line join under a base style.
+        t = Text.from_ansi(
+            "\x1b[1mbold\x1b[0m normal\n"
+            "\x1b[38;5;196mred8\x1b[38;2;10;20;30mrgb\x1b[0m\n"
+            "\x1b[48;5;237;99mgarbage\x1b[31;33m last\n"
+            "over\r written\n"
+            "plain",
+            style="italic",
+        )
+        c3 = Console(file=io.StringIO(), width=60, record=True,
+                     legacy_windows=False)
+        c3.print(t)
+        return c3.export_text()
     return c.export_text()
 
 def main():

@@ -3,6 +3,7 @@
 #include "Html.h"
 #include "Emoji.h"
 #include "Palette.h"
+#include "Ansi.h"
 #include <sstream>
 #include <cstdlib>
 #include <cstdio>
@@ -43,6 +44,10 @@ const Palette& eight_bit_palette() {
     static const Palette p(std::vector<ColorTriplet>(detail::kEightBitPalette,
                                                      detail::kEightBitPalette + 256));
     return p;
+}
+
+Text Text::from_ansi(const std::string& text, const Style& style) {
+    return text_from_ansi(text, style);
 }
 
 // Python Style._add: right operand wins for the boolean attributes it

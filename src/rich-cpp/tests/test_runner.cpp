@@ -697,6 +697,24 @@ int main(int argc, char* argv[]) {
                std::to_string(nf.seek(123));
         std::cout << out;
         return 0;
+    } else if (test_name == "from_ansi_basic") {
+        // rich.text.Text.from_ansi (AnsiDecoder): SGR state machine,
+        // 256/truecolor colors, lenient invalid codes, CR truncation,
+        // multi-line join under a base style.
+        rich::ConsoleOptions o{.width = 60, .record = true, .legacy_windows = false};
+        std::ostringstream dummy;
+        rich::Console c(dummy, o);
+        const auto base = rich::parse_style_def("italic");
+        const rich::Text t = rich::Text::from_ansi(
+            std::string("\x1b[1mbold\x1b[0m normal\n"
+                        "\x1b[38;5;196mred8\x1b[38;2;10;20;30mrgb\x1b[0m\n"
+                        "\x1b[48;5;237;99mgarbage\x1b[31;33m last\n"
+                        "over\r written\n"
+                        "plain"),
+            base);
+        c.print(rich::AnyRenderable(t));
+        std::cout << c.export_text();
+        return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
         return 1;

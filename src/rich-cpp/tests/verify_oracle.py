@@ -49,6 +49,7 @@ TEST_CASES = [
     "control_basic",
     "colorfile_basic",
     "fileproxy_basic",
+    "from_ansi_basic",
 ]
 
 import os

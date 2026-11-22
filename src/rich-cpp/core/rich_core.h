@@ -585,6 +585,12 @@ AnyRenderable operator|(AnyRenderable lhs, F&& rhs) {
 struct Text {
     std::string content;
     Style style;
+    // Python Text.from_ansi: decode ANSI escapes into a single styled run,
+    // joining lines with "\n"; the base style is applied under every run, so
+    // the result carries base + the last in-effect style. (Python's
+    // justify/overflow/no_wrap/end/tab_size kwargs have no equivalent on the
+    // C++ renderable Text.)
+    static RICH_EXPORT Text from_ansi(const std::string& text, const Style& style = {});
 };
 inline std::vector<Segment> render_item(const Text& t, const Console&, const Options& opt) {
     // Python Text.__rich_console__: wrap at console width (cell-aware), join

@@ -28,7 +28,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | Text formatting & wrapping | `rich.text` | `rich::text::Text` | ✅ Done | ✅ Yes | Soft word wrapping matching Python Rich output |
 | | Unicode Cell Width Calculation | `rich.cells` | `cell_width` / `visual_width` | ✅ Done | ✅ Yes | Generated East-Asian width table + ZWJ/VS16 handling (`CellTable.h`); oracles `text_wrap_cjk`, `text_wrap_emoji` |
 | | Emoji codes `:smile:` | `rich.emoji` | `rich::emoji_replace` | ✅ Done | ✅ Yes | Python-parity `:name:` table (3608 codes, generated `EmojiTable.h`), `-emoji`/`-text` variants, unknown codes verbatim |
-| | `Text.from_ansi` (ANSI escape decoder) | `rich.ansi` | — | ❌ Not Started | ❌ No | Parse ANSI escape streams into styled Text (`AnsiDecoder`, `Style.parse`) |
+| | `Text.from_ansi` (ANSI escape decoder) | `rich.ansi` | `Text::from_ansi`, `rich::AnsiDecoder`, `text_from_ansi` | ✅ Done | ✅ Yes | Full `re_ansi` tokenizer (OSC/CSI/charset/single-char, lenient like Python) + SGR state machine (colors 38/48 via 5/2, 48-entry style map, incomplete specs dropped); decoder style state carries across lines (Python `self.style`); OSC-8 links tracked; C++ single-run `Text` carries base + last in-effect style (per-run SGR diverges — documented); `justify/overflow/no_wrap/end/tab_size` kwargs have no equivalent on the C++ renderable — oracle `from_ansi_basic` |
 | | Highlighters: `RegexHighlighter`, `ReprHighlighter`, `NumberHighlighter` | `rich.highlighter` | — | ❌ Not Started | ❌ No | User regex→style rules; colored repr output; number formatting rules (JSON + Syntax highlighters do exist) |
 | | `Text` extras: `highlight_regex`, `assemble`, `concatenate`, `styled`, overflow modes (`ellipsis`, `crop`) | `rich.text` | — | ❌ Not Started | ❌ No | Cell-wrap engine is ported; these APIs/modes are not |
 | **Layout & Containers** | `Panel` | `rich.panel` | `rich::panel::Panel` | ✅ Done | ✅ Yes | Centered titles, borders, multiline support, custom box styles |
@@ -87,7 +87,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 - 🚫 — oracle impossible: nondeterministic output (Traceback addresses/symbols), live-environment state (terminal size), interactive I/O (`Console.input()`), or not portable to C++. (Wall-clock timestamps are oracle-able via clock injection — see `Console.log()`.)
 
 ### Coverage summary
-- **46 oracle cases** (46/46 byte-exact) cover every deterministic ✅ row.
-- **15 rows ❌ Not Started** — portable but not implemented (largest: Progress custom columns, spinner registry, `Text.from_ansi`, Syntax lexer/theme breadth, Table/Panel decoration).
+- **47 oracle cases** (47/47 byte-exact) cover every deterministic ✅ row.
+- **14 rows ❌ Not Started** — portable but not implemented (largest: Progress custom columns, spinner registry, Syntax lexer/theme breadth, Table/Panel decoration, highlighters).
 - **5 rows 🚫** (Status) — `scope()`, self-diagnostics/inspection, Jupyter/IPython, `logging` handler, `Pretty` struct introspection.
 - **8 rows 🚫** (Oracle column) — Traceback, terminal-size detection, `Console.input()`, + the 5 not-portable rows: byte-exact verification not possible.
