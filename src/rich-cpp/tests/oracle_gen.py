@@ -288,6 +288,36 @@ def generate_python_oracle(test_name: str) -> str:
             for _ in range(8):
                 prog.advance(t)
         return c.export_text()
+    elif test_name == "style_sgr":
+        # Raw SGR stream: forced terminal, truecolor, no_color off. Compare
+        # sink bytes directly (not export_text): one print per line.
+        sink2 = io.StringIO()
+        c2 = Console(file=sink2, width=60, force_terminal=True,
+                     color_system="truecolor", no_color=False,
+                     legacy_windows=False)
+        c2.print("[red]a[/][bright_red]b[/]")
+        c2.print("[color(196)]a[/][on color(27)]b[/]")
+        c2.print("[#ff8800]a[/][on #00ff88]b[/]")
+        c2.print("[rgb(200,100,50)]a[/][on rgb(10,20,30)]b[/]")
+        c2.print("[bold strike reverse]a[/]")
+        c2.print("[blink blink2 conceal underline2 frame encircle overline]a[/]")
+        c2.print("[default]a[/][on default]b[/]")
+        c2.print("[b]alias[/bold]")
+        return sink2.getvalue()
+    elif test_name == "style_sgr_256":
+        # Same raw-SGR compare under the 256-color (EightBit) system: truecolor
+        # colors are downgraded (colorsys HLS + cube), color(N) passes, the
+        # gray branch hits index 241.
+        sink2 = io.StringIO()
+        c2 = Console(file=sink2, width=60, force_terminal=True,
+                     color_system="256", no_color=False,
+                     legacy_windows=False)
+        c2.print("[rgb(200,100,50)]a[/]")
+        c2.print("[color(196)]b[/]")
+        c2.print("[red]c[/]")
+        c2.print("[on rgb(200,100,50)]d[/]")
+        c2.print("[rgb(100,100,100)]e[/]")
+        return sink2.getvalue()
     return c.export_text()
 
 def main():

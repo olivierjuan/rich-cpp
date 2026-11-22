@@ -12,15 +12,20 @@
 #include <utility>
 #include <cstdint>
 #include <algorithm>
+#include <optional>
 
 namespace rich {
 
 struct RICH_EXPORT Color {
-    enum class Type { None, Standard, Rgb };
+    // Mirrors Python rich.color.ColorType (0 = unset here; Python has no
+    // "none", its constructor default is ColorType.DEFAULT).
+    enum class Type { None, Standard, Rgb, Charcoal, Default };
     Type type{Type::None};
     uint8_t r{0};
     uint8_t g{0};
     uint8_t b{0};
+    // Standard: SGR foreground code (30-37 / 90-97; background is ansi + 10).
+    // Charcoal: 0-255 palette index (Python ColorType.EIGHT_BIT, `color(N)`).
     uint8_t ansi{0};
 
     static constexpr Color from_ansi(uint8_t code) {
@@ -35,8 +40,30 @@ struct RICH_EXPORT Color {
         c.r = red; c.g = green; c.b = blue;
         return c;
     }
+    static constexpr Color charcoal(uint8_t index) {
+        Color c;
+        c.type = Type::Charcoal;
+        c.ansi = index;
+        return c;
+    }
+    // Python Color.default() (ColorType.DEFAULT -> SGR 39/49).
+    static constexpr Color dflt() {
+        Color c;
+        c.type = Type::Default;
+        return c;
+    }
+    // rich._palettes.EIGHT_BIT_PALETTE lookup (index 0-255 -> RGB):
+    // 0-15 base colors, 16-231 the 6x6x6 cube (levels 0,95,135,175,215,255),
+    // 232-255 the 24-step gray ramp (8..238 step 10).
+    static void charcoal_rgb(int index, int& r, int& g, int& b);
     constexpr bool operator==(const Color&) const = default;
 };
+
+// Python rich.color.ColorSystem (the value a console renders colors to).
+enum class ColorSystem { Standard = 1, EightBit = 2, Truecolor = 3 };
+
+// Python Color.downgrade: convert a color to a system with fewer colors.
+RICH_EXPORT Color downgrade_color(const Color& c, ColorSystem system);
 
 struct RICH_EXPORT Style {
     bool bold{false};
@@ -45,13 +72,23 @@ struct RICH_EXPORT Style {
     bool underline{false};
     bool reverse{false};
     bool strike{false};
+    // Extra SGR attributes (Python rich.style._style_map bits 4,5,7,9-12).
+    bool blink{false};
+    bool blink2{false};
+    bool conceal{false};
+    bool underline2{false};
+    bool frame{false};
+    bool encircle{false};
+    bool overline{false};
     Color color;
     Color bg_color;
     // Python Style tracks which boolean attributes were *explicitly set* in
     // the constructor; repr emits them even when false (e.g.
-    // Style(color='green', bold=False) -> "bold=False"). Bit 0=bold,
-    // 1=dim, 2=italic, 3=underline, 4=reverse, 5=strike.
-    uint8_t explicit_bits{0};
+    // Style(color='green', bold=False) -> "bold=False"). C++ internal bit
+    // layout: 0=bold, 1=dim, 2=italic, 3=underline, 4=reverse, 5=strike,
+    // 6=blink, 7=blink2, 8=conceal, 9=underline2, 10=frame, 11=encircle,
+    // 12=overline. (SGR emission order follows Python, not this layout.)
+    uint16_t explicit_bits{0};
     // Hyperlink target (Python Style.link); OSC 8 on terminal render.
     std::string link;
     uint32_t link_id{0};
@@ -59,15 +96,21 @@ struct RICH_EXPORT Style {
     constexpr bool operator==(const Style& o) const {
         return bold == o.bold && dim == o.dim && italic == o.italic &&
                underline == o.underline && reverse == o.reverse &&
-               strike == o.strike && color == o.color && bg_color == o.bg_color &&
-               explicit_bits == o.explicit_bits && link == o.link;
+               strike == o.strike && blink == o.blink && blink2 == o.blink2 &&
+               conceal == o.conceal && underline2 == o.underline2 &&
+               frame == o.frame && encircle == o.encircle &&
+               overline == o.overline && color == o.color &&
+               bg_color == o.bg_color && explicit_bits == o.explicit_bits &&
+               link == o.link;
     }
 
     // Python bool(Style): false only for the null style (no attributes,
     // colors, explicit bits, or link).
     bool truthy() const {
         return explicit_bits != 0 || bold || dim || italic || underline ||
-               reverse || strike || color.type != Color::Type::None ||
+               reverse || strike || blink || blink2 || conceal ||
+               underline2 || frame || encircle || overline ||
+               color.type != Color::Type::None ||
                bg_color.type != Color::Type::None || !link.empty();
     }
 
@@ -155,11 +198,28 @@ private:
     std::shared_ptr<const Concept> self_;
 };
 
+// Python Style._make_ansi_codes order: bold, dim, italic, underline, blink,
+// blink2, reverse, conceal, strike, underline2, frame, encircle, overline —
+// only attributes that are set AND explicitly set (Python
+// `_attributes & _set_attributes`) — then color, then background (each
+// downgraded to `system`). `strip_color` mirrors Segment.remove_color
+// (NO_COLOR mode): colors dropped, attributes kept. Empty string = nothing.
+RICH_EXPORT std::string style_sgr(const Style& s, ColorSystem system,
+                                  bool strip_color = false);
+
 struct ConsoleOptions {
     size_t width{80};
     size_t height{0}; // 0 = auto-detect (defaults to 25 rows)
     bool record{false};
     bool legacy_windows{false};
+    // Python Console(force_terminal=...): nullopt = auto-detect TTY,
+    // true = force styled output, false = force plain.
+    std::optional<bool> force_terminal;
+    // Python Console(color_system=...): nullopt = auto-detect (a non-TTY
+    // stream renders plain text, like Python).
+    std::optional<ColorSystem> color_system;
+    // Python Console(no_color=...): nullopt = NO_COLOR env var.
+    std::optional<bool> no_color;
 };
 
 class RICH_EXPORT Console {
@@ -181,6 +241,15 @@ public:
     size_t width() const noexcept { return options_.width; }
     size_t height() const noexcept { return options_.height; }
     bool legacy_windows() const noexcept { return options_.legacy_windows; }
+    // Python Console.is_terminal: force_terminal wins; otherwise true only
+    // for C stdio streams attached to a TTY (ostringstream/file -> false).
+    bool is_terminal() const;
+    // Python Console._color_system: explicit option wins; auto-detect is
+    // nullopt for non-TTY/dumb terminals (=> render plain, no SGR, no links)
+    // and a platform default (truecolor) on a TTY.
+    std::optional<ColorSystem> active_color_system() const;
+    // Python Console.no_color: explicit option wins, else NO_COLOR env var.
+    bool no_color() const;
     std::string export_text() const;
     // Terminal snapshot as SVG (Python Rich Console.export_svg parity).
     // Requires record=true. title: window caption; unique_id: deterministic

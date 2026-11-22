@@ -223,9 +223,10 @@ private:
             buf += "\r\x1b[2K";
             if (i < lines.size()) {
                 for (const auto& s : lines[i]) {
-                    if (style_active(s.style)) buf += style_to_ansi(s.style);
+                    const std::string sgr = style_sgr(s.style, ColorSystem::Truecolor);
+                    if (!sgr.empty()) buf += sgr;
                     buf += s.text;
-                    if (style_active(s.style)) buf += "\x1b[0m";
+                    if (!sgr.empty()) buf += "\x1b[0m";
                 }
             }
             buf += "\n";
@@ -244,34 +245,6 @@ private:
         os_ << buf;
         os_.flush();
         prev_height_ = 0;
-    }
-
-    static bool style_active(const rich::Style& s) {
-        return s.bold || s.dim || s.italic || s.underline || s.reverse ||
-               s.color.type != rich::Color::Type::None ||
-               s.bg_color.type != rich::Color::Type::None;
-    }
-
-    static std::string style_to_ansi(const rich::Style& s) {
-        std::string out;
-        if (s.bold) out += "\x1b[1m";
-        if (s.dim) out += "\x1b[2m";
-        if (s.italic) out += "\x1b[3m";
-        if (s.underline) out += "\x1b[4m";
-        if (s.reverse) out += "\x1b[7m";
-        if (s.color.type == rich::Color::Type::Standard) {
-            out += "\x1b[" + std::to_string(s.color.ansi) + "m";
-        } else if (s.color.type == rich::Color::Type::Rgb) {
-            out += "\x1b[38;2;" + std::to_string(s.color.r) + ";" +
-                   std::to_string(s.color.g) + ";" + std::to_string(s.color.b) + "m";
-        }
-        if (s.bg_color.type == rich::Color::Type::Standard) {
-            out += "\x1b[" + std::to_string(s.bg_color.ansi + 10) + "m";
-        } else if (s.bg_color.type == rich::Color::Type::Rgb) {
-            out += "\x1b[48;2;" + std::to_string(s.bg_color.r) + ";" +
-                   std::to_string(s.bg_color.g) + ";" + std::to_string(s.bg_color.b) + "m";
-        }
-        return out;
     }
 
     rich::AnyRenderable renderable_;

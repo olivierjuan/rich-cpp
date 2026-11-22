@@ -39,6 +39,8 @@ TEST_CASES = [
     "markup_basic",
     "padding_basic",
     "track_basic",
+    "style_sgr",
+    "style_sgr_256",
 ]
 
 import os

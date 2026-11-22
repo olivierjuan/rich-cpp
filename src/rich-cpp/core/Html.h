@@ -44,16 +44,12 @@ inline const Triplet& theme_foreground() {
     return fg;
 }
 
-// SGR code -> theme palette index, field-aware (foreground vs background).
+// SGR canonical foreground code (30..37 / 90..97) -> theme palette index
+// 0..15; background colors store the same canonical fg code (the +10 bg
+// offset is applied at render time).
 inline int sgr_index(uint8_t ansi, bool foreground) {
-    int idx;
-    if (foreground) {
-        if (ansi >= 90 && ansi <= 97) idx = ansi - 90;
-        else idx = ansi - 30; // 30..37
-    } else {
-        if (ansi >= 100 && ansi <= 107) idx = ansi - 100;
-        else idx = ansi - 40; // 40..47
-    }
+    (void)foreground;
+    int idx = (ansi >= 90 && ansi <= 97) ? ansi - 90 : ansi - 30;
     if (idx < 0 || idx > 15) idx = 7;
     return idx;
 }
@@ -61,6 +57,12 @@ inline int sgr_index(uint8_t ansi, bool foreground) {
 inline Triplet truecolor(const Color& c, bool foreground) {
     if (c.type == Color::Type::Rgb) return {c.r, c.g, c.b};
     if (c.type == Color::Type::Standard) return html_theme_ansi()[sgr_index(c.ansi, foreground)];
+    if (c.type == Color::Type::Charcoal) {
+        int r, g, b;
+        Color::charcoal_rgb(c.ansi, r, g, b);
+        return {static_cast<uint8_t>(r), static_cast<uint8_t>(g),
+                static_cast<uint8_t>(b)};
+    }
     return foreground ? theme_foreground() : theme_background();
 }
 
@@ -73,12 +75,14 @@ inline Triplet blend(const Triplet& a, const Triplet& b) {
     return {mix(a.r, b.r), mix(a.g, b.g), mix(a.b, b.b)};
 }
 
-// Python Style.__bool__: false iff no attributes, colors, or links. Our Style
-// has no link; the style=None sentinel is also empty.
+// Python Style.__bool__: false iff no attributes, colors, or links.
 inline bool is_plain_style(const Style& st) {
     return st.color.type == Color::Type::None &&
            st.bg_color.type == Color::Type::None &&
-           !st.bold && !st.dim && !st.italic && !st.underline && !st.reverse;
+           !st.bold && !st.dim && !st.italic && !st.underline &&
+           !st.reverse && !st.strike && !st.blink && !st.blink2 &&
+           !st.conceal && !st.underline2 && !st.frame && !st.encircle &&
+           !st.overline;
 }
 
 // Python Style.get_html_style(DEFAULT_TERMINAL_THEME).

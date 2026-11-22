@@ -438,6 +438,43 @@ int main(int argc, char* argv[]) {
         auto segs = tracker.render(console, rich::Options{.width = 60}, t0);
         for (const auto& s : segs) std::cout << s.text;
         return 0;
+    } else if (test_name == "style_sgr") {
+        // Raw SGR stream: forced terminal, truecolor, no_color explicitly off
+        // (host shells set NO_COLOR / TERM=dumb). Compare sink bytes, one
+        // print per line — bypass export_text().
+        rich::ConsoleOptions s_opts{.width = 60, .record = false,
+                                    .legacy_windows = false,
+                                    .force_terminal = true,
+                                    .color_system = rich::ColorSystem::Truecolor,
+                                    .no_color = false};
+        std::ostringstream s_oss;
+        rich::Console sc(s_oss, s_opts);
+        sc.print(std::string_view("[red]a[/][bright_red]b[/]"));
+        sc.print(std::string_view("[color(196)]a[/][on color(27)]b[/]"));
+        sc.print(std::string_view("[#ff8800]a[/][on #00ff88]b[/]"));
+        sc.print(std::string_view("[rgb(200,100,50)]a[/][on rgb(10,20,30)]b[/]"));
+        sc.print(std::string_view("[bold strike reverse]a[/]"));
+        sc.print(std::string_view(
+            "[blink blink2 conceal underline2 frame encircle overline]a[/]"));
+        sc.print(std::string_view("[default]a[/][on default]b[/]"));
+        sc.print(std::string_view("[b]alias[/bold]"));
+        std::cout << s_oss.str();
+        return 0;
+    } else if (test_name == "style_sgr_256") {
+        rich::ConsoleOptions s_opts{.width = 60, .record = false,
+                                    .legacy_windows = false,
+                                    .force_terminal = true,
+                                    .color_system = rich::ColorSystem::EightBit,
+                                    .no_color = false};
+        std::ostringstream s_oss;
+        rich::Console sc(s_oss, s_opts);
+        sc.print(std::string_view("[rgb(200,100,50)]a[/]"));
+        sc.print(std::string_view("[color(196)]b[/]"));
+        sc.print(std::string_view("[red]c[/]"));
+        sc.print(std::string_view("[on rgb(200,100,50)]d[/]"));
+        sc.print(std::string_view("[rgb(100,100,100)]e[/]"));
+        std::cout << s_oss.str();
+        return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
         return 1;

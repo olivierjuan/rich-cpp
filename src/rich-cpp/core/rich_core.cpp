@@ -4,6 +4,9 @@
 #include "Emoji.h"
 #include <sstream>
 #include <cstdlib>
+#include <cctype>
+#include <cmath>
+#include <array>
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
 #  define NOMINMAX
@@ -21,19 +24,27 @@ std::string emoji_replace(std::string_view text) { return emoji::replace(text); 
 namespace rich {
 
 // Python Style._add: right operand wins for the boolean attributes it
-// explicitly set; colors/bg_color/link take "right or left"; explicit-bit
-// mask is the union. kNoneStyle (Python's null style) is the identity.
+// explicitly set; colors/bg_color/link take "right or left" (a DEFAULT-typed
+// color is truthy in Python, so it wins too); explicit-bit mask is the union.
+// kNoneStyle (Python's null style) is the identity.
 Style Style::operator+(const Style& o) const {
     if (svg::is_none_style(o)) return *this;
     if (svg::is_none_style(*this)) return o;
     Style r = *this;
-    r.explicit_bits = static_cast<uint8_t>(explicit_bits | o.explicit_bits);
-    r.bold = (o.explicit_bits & 0x01) != 0 ? o.bold : r.bold;
-    r.dim = (o.explicit_bits & 0x02) != 0 ? o.dim : r.dim;
-    r.italic = (o.explicit_bits & 0x04) != 0 ? o.italic : r.italic;
-    r.underline = (o.explicit_bits & 0x08) != 0 ? o.underline : r.underline;
-    r.reverse = (o.explicit_bits & 0x10) != 0 ? o.reverse : r.reverse;
-    r.strike = (o.explicit_bits & 0x20) != 0 ? o.strike : r.strike;
+    r.explicit_bits = static_cast<uint16_t>(explicit_bits | o.explicit_bits);
+    r.bold = (o.explicit_bits & 0x0001) != 0 ? o.bold : r.bold;
+    r.dim = (o.explicit_bits & 0x0002) != 0 ? o.dim : r.dim;
+    r.italic = (o.explicit_bits & 0x0004) != 0 ? o.italic : r.italic;
+    r.underline = (o.explicit_bits & 0x0008) != 0 ? o.underline : r.underline;
+    r.reverse = (o.explicit_bits & 0x0010) != 0 ? o.reverse : r.reverse;
+    r.strike = (o.explicit_bits & 0x0020) != 0 ? o.strike : r.strike;
+    r.blink = (o.explicit_bits & 0x0040) != 0 ? o.blink : r.blink;
+    r.blink2 = (o.explicit_bits & 0x0080) != 0 ? o.blink2 : r.blink2;
+    r.conceal = (o.explicit_bits & 0x0100) != 0 ? o.conceal : r.conceal;
+    r.underline2 = (o.explicit_bits & 0x0200) != 0 ? o.underline2 : r.underline2;
+    r.frame = (o.explicit_bits & 0x0400) != 0 ? o.frame : r.frame;
+    r.encircle = (o.explicit_bits & 0x0800) != 0 ? o.encircle : r.encircle;
+    r.overline = (o.explicit_bits & 0x1000) != 0 ? o.overline : r.overline;
     if (o.color.type != Color::Type::None) r.color = o.color;
     if (o.bg_color.type != Color::Type::None) r.bg_color = o.bg_color;
     if (!o.link.empty()) {
@@ -105,49 +116,199 @@ size_t detect_terminal_height() {
     return 25;
 }
 
-std::string link_osc(const Style& s);
+} // namespace
 
-std::string style_to_ansi(const Style& s) {
-    if (no_color_enabled()) return s.link.empty() ? "" : link_osc(s);
+// Python Color.downgrade parity (rich/color.py).
+namespace {
+// rich._palettes.STANDARD_PALETTE — the 16 "standard" RGB values used for
+// nearest-match downgrade.
+constexpr std::array<std::array<int, 3>, 16> kStandardPalette = {{
+    {0, 0, 0}, {170, 0, 0}, {0, 170, 0}, {170, 85, 0}, {0, 0, 170},
+    {170, 0, 170}, {0, 170, 170}, {170, 170, 170}, {85, 85, 85},
+    {255, 85, 85}, {85, 255, 85}, {255, 255, 85}, {85, 85, 255},
+    {255, 85, 255}, {85, 255, 255}, {255, 255, 255},
+}};
+// rich._palettes.EIGHT_BIT_PALETTE indices 0-15 (the cube/ramp follow:
+// 16-231 = 6x6x6 with levels {0,95,135,175,215,255}, 232-255 = gray 8..238).
+constexpr std::array<std::array<int, 3>, 16> kEightBitBase = {{
+    {0, 0, 0}, {128, 0, 0}, {0, 128, 0}, {128, 128, 0}, {0, 0, 128},
+    {128, 0, 128}, {0, 128, 128}, {192, 192, 192}, {128, 128, 128},
+    {255, 0, 0}, {0, 255, 0}, {255, 255, 0}, {0, 0, 255},
+    {255, 0, 255}, {0, 255, 255}, {255, 255, 255},
+}};
 
-    std::string out;
-    if (s.bold) out += "\x1b[1m";
-    if (s.dim) out += "\x1b[2m";
-    if (s.italic) out += "\x1b[3m";
-    if (s.underline) out += "\x1b[4m";
-    if (s.strike) out += "\x1b[9m";
-    if (s.reverse) out += "\x1b[7m";
-
-    if (s.color.type == Color::Type::Standard) {
-        out += "\x1b[" + std::to_string(s.color.ansi) + "m";
-    } else if (s.color.type == Color::Type::Rgb) {
-        out += "\x1b[38;2;" + std::to_string(s.color.r) + ";" +
-               std::to_string(s.color.g) + ";" + std::to_string(s.color.b) + "m";
+void eight_bit_triplet(int index, int& r, int& g, int& b) {
+    if (index < 16) {
+        r = kEightBitBase[index][0]; g = kEightBitBase[index][1];
+        b = kEightBitBase[index][2];
+        return;
     }
-
-    if (s.bg_color.type == Color::Type::Standard) {
-        out += "\x1b[" + std::to_string(s.bg_color.ansi + 10) + "m";
-    } else if (s.bg_color.type == Color::Type::Rgb) {
-        out += "\x1b[48;2;" + std::to_string(s.bg_color.r) + ";" +
-               std::to_string(s.bg_color.g) + ";" + std::to_string(s.bg_color.b) + "m";
+    if (index < 232) {
+        static const int levels[6] = {0, 95, 135, 175, 215, 255};
+        int i = index - 16;
+        r = levels[i / 36]; g = levels[(i / 6) % 6]; b = levels[i % 6];
+        return;
     }
-    return out;
+    int v = 8 + 10 * (index - 232);
+    r = g = b = v;
 }
 
+// Python colorsys.rgb_to_hls parity (exact C stdlib formulas — the `s < 0.15`
+// grayscale branch of downgrade must see bit-identical floats).
+void rgb_to_hls(double r, double g, double b, double& h, double& l, double& s) {
+    double maxc = std::max(r, std::max(g, b));
+    double minc = std::min(r, std::min(g, b));
+    double summ = maxc + minc;
+    double rang = maxc - minc;
+    l = summ / 2.0;
+    if (minc == maxc) {
+        h = 0.0; s = 0.0;
+        return;
+    }
+    if (l <= 0.5) s = rang / summ;
+    else s = rang / (2.0 - summ);
+    double vr = (maxc - r) / rang;
+    double v;
+    if (g == maxc) v = vr + (b - r) / rang;
+    else if (b == maxc) v = 2.0 + vr;
+    else v = 4.0 + (r - g) / rang;
+    v /= 6.0;
+    if (v < 0.0) v += 1.0;
+    h = v;
+}
+
+// Python Palette.match parity (BT.601 perceptual distance, integer >> 8).
+int palette_match(const std::array<std::array<int, 3>, 16>& palette, int r1, int g1, int b1) {
+    int best = 0;
+    double best_d = 1e300;
+    for (int i = 0; i < 16; ++i) {
+        int r2 = palette[i][0], g2 = palette[i][1], b2 = palette[i][2];
+        int red_mean = (r1 + r2) / 2;
+        int red = r1 - r2, green = g1 - g2, blue = b1 - b2;
+        double term_r = ((512.0 + red_mean) * (double)red * red) / 256.0;
+        double term_b = ((767.0 - red_mean) * (double)blue * blue) / 256.0;
+        double d = std::sqrt(term_r + 4.0 * green * green + term_b);
+        if (d < best_d) { best_d = d; best = i; }
+    }
+    return best;
+}
+
+// Python round() = round-half-to-even (banker's).
+int round_half_even(double x) { return static_cast<int>(std::nearbyint(x)); }
+
+Color rgb_to_charcoal(uint8_t r, uint8_t g, uint8_t b) {
+    double h, l, s;
+    rgb_to_hls(r / 255.0, g / 255.0, b / 255.0, h, l, s);
+    if (s < 0.15) {
+        int gray = round_half_even(l * 25.0);
+        int n = (gray == 0) ? 16 : (gray == 25 ? 231 : 231 + gray);
+        return Color::charcoal(static_cast<uint8_t>(n));
+    }
+    auto six = [](int v) {
+        double d = (v < 95) ? v / 95.0 : 1.0 + (v - 95) / 40.0;
+        return round_half_even(d);
+    };
+    int n = 16 + 36 * six(r) + 6 * six(g) + six(b);
+    return Color::charcoal(static_cast<uint8_t>(n));
+}
+} // namespace
+
+void Color::charcoal_rgb(int index, int& r, int& g, int& b) { eight_bit_triplet(index, r, g, b); }
+
+Color downgrade_color(const Color& c, ColorSystem system) {
+    // Python: `if self.type in (ColorType.DEFAULT, system): return self`,
+    // then EIGHT_BIT-from-truecolor, STANDARD-from-truecolor-or-eightbit,
+    // WINDOWS branches, else `return self`. (ColorType/ColorSystem are
+    // IntEnums compared by value: STANDARD=1, EIGHT_BIT=2, TRUECOLOR=3.)
+    if (c.type == Color::Type::Default) return c;
+    const bool same_system =
+        (c.type == Color::Type::Standard && system == ColorSystem::Standard) ||
+        (c.type == Color::Type::Charcoal && system == ColorSystem::EightBit) ||
+        (c.type == Color::Type::Rgb && system == ColorSystem::Truecolor);
+    if (same_system) return c;
+    // Standard colors are renderable in every system -> self.
+    if (c.type == Color::Type::Standard) return c;
+    if (system == ColorSystem::Truecolor) return c; // everything fits
+    if (system == ColorSystem::EightBit && c.type == Color::Type::Rgb)
+        return rgb_to_charcoal(c.r, c.g, c.b);
+    if (system == ColorSystem::Standard) {
+        int r, g, b;
+        if (c.type == Color::Type::Rgb) {
+            r = c.r; g = c.g; b = c.b;
+        } else {  // Charcoal: EIGHT_BIT_PALETTE[number]
+            eight_bit_triplet(c.ansi, r, g, b);
+        }
+        int n = palette_match(kStandardPalette, r, g, b);
+        // Standard number 0-7 -> SGR 30-37; 8-15 -> 90-97.
+        return Color::from_ansi(static_cast<uint8_t>(n < 8 ? 30 + n : 90 + n));
+    }
+    return c;
+}
+
+// Python Color.get_ansi_codes(foreground) as one SGR fragment.
+inline std::string color_sgr(const Color& c, bool foreground) {
+    switch (c.type) {
+    case Color::Type::Default:
+        return foreground ? "39" : "49";
+    case Color::Type::Standard:
+        return std::to_string(foreground ? c.ansi : c.ansi + 10);
+    case Color::Type::Charcoal:
+        return std::string(foreground ? "38;5;" : "48;5;") + std::to_string(c.ansi);
+    case Color::Type::Rgb:
+    default:
+        return std::string(foreground ? "38;2;" : "48;2;") + std::to_string(c.r) +
+               ";" + std::to_string(c.g) + ";" + std::to_string(c.b);
+    }
+}
+
+// Python Style._make_ansi_codes: attributes first (bit order 0..12, only
+// set-and-explicit), then color, then background.
+std::string style_sgr(const Style& s, ColorSystem system, bool strip_color) {
+    struct Attr { bool value; bool explicit_set; const char* code; };
+    const Attr attrs[] = {
+        {s.bold, (s.explicit_bits & 0x0001) != 0, "1"},
+        {s.dim, (s.explicit_bits & 0x0002) != 0, "2"},
+        {s.italic, (s.explicit_bits & 0x0004) != 0, "3"},
+        {s.underline, (s.explicit_bits & 0x0008) != 0, "4"},
+        {s.blink, (s.explicit_bits & 0x0040) != 0, "5"},
+        {s.blink2, (s.explicit_bits & 0x0080) != 0, "6"},
+        {s.reverse, (s.explicit_bits & 0x0010) != 0, "7"},
+        {s.conceal, (s.explicit_bits & 0x0100) != 0, "8"},
+        {s.strike, (s.explicit_bits & 0x0020) != 0, "9"},
+        {s.underline2, (s.explicit_bits & 0x0200) != 0, "21"},
+        {s.frame, (s.explicit_bits & 0x0400) != 0, "51"},
+        {s.encircle, (s.explicit_bits & 0x0800) != 0, "52"},
+        {s.overline, (s.explicit_bits & 0x1000) != 0, "53"},
+    };
+    std::string parts;
+    auto append = [&parts](const std::string& p) {
+        if (!parts.empty()) parts += ';';
+        parts += p;
+    };
+    for (const auto& a : attrs)
+        if (a.value && a.explicit_set) append(a.code);
+    if (!strip_color) {
+        if (s.color.type != Color::Type::None)
+            append(color_sgr(downgrade_color(s.color, system), true));
+        if (s.bg_color.type != Color::Type::None)
+            append(color_sgr(downgrade_color(s.bg_color, system), false));
+    }
+    if (parts.empty()) return "";
+    return "\x1b[" + parts + "m";
+}
+
+namespace {
 // Python Style.render link wrap: OSC 8 with a per-instance id.
 inline std::string link_osc_begin(const Style& s) {
     return "\x1b]8;id=" + std::to_string(s.link_id) + ";" + s.link + "\x1b\\";
 }
 inline const char* link_osc_end() { return "\x1b]8;;\x1b\\"; }
-std::string link_osc(const Style& s) {
-    return link_osc_begin(s) + link_osc_end();
-}
 
-bool has_style(const Style& s) {
-    if (no_color_enabled()) return false;
-    return s.bold || s.dim || s.italic || s.underline || s.reverse || s.strike ||
-           s.color.type != Color::Type::None || s.bg_color.type != Color::Type::None ||
-           !s.link.empty();
+// True when the style emits anything for the active color system.
+// strip_color mirrors NO_COLOR (attributes keep, colors go); a null color
+// system strips everything including links, so Console never calls this.
+bool has_style(const Style& s, ColorSystem system, bool strip_color) {
+    return !style_sgr(s, system, strip_color).empty() || !s.link.empty();
 }
 
 std::string repeat_utf8_core(std::string_view glyph, size_t count) {
@@ -245,11 +406,18 @@ void Console::print(const AnyRenderable& ar) {
     // (Renderables carry their own trailing newline, cf. Text end="\n".)
     auto out = split_and_crop_lines(std::move(segments), active_w);
 
+    // Python _render_buffer: auto-detected None color system (non-TTY or
+    // dumb terminal) renders plain text — no SGR, no OSC 8 links; no_color
+    // drops colors only (Segment.remove_color); otherwise full SGR downgraded
+    // to the active color system.
+    const auto cs = active_color_system();
+    const bool strip_color = cs.has_value() && no_color();
     for (const auto& s : out) {
-        bool styled = has_style(s.style);
-        bool linked = !s.style.link.empty() && !options_.legacy_windows;
+        const bool styled = cs.has_value() && has_style(s.style, *cs, strip_color);
+        const bool linked =
+            cs.has_value() && !s.style.link.empty() && !options_.legacy_windows;
         if (linked) os_ << link_osc_begin(s.style);
-        if (styled) os_ << style_to_ansi(s.style);
+        if (styled) os_ << style_sgr(s.style, *cs, strip_color);
         os_ << s.text;
         if (styled) os_ << "\x1b[0m";
         if (linked) os_ << link_osc_end();
@@ -268,6 +436,61 @@ void Console::print(std::string_view markup_text) {
 void Console::rule(std::string_view title) {
     size_t w = (options_.width > 0) ? options_.width : detect_terminal_width();
     print(AnyRenderable(Rule{std::string(title), w}));
+}
+
+bool Console::is_terminal() const {
+    if (options_.force_terminal.has_value()) return *options_.force_terminal;
+    if (&os_ == &std::cout || &os_ == &std::cerr) {
+#ifdef _WIN32
+        int fd = (&os_ == &std::cout) ? _fileno(stdout) : _fileno(stderr);
+        return _isatty(fd) != 0;
+#else
+        int fd = (&os_ == &std::cout) ? fileno(stdout) : fileno(stderr);
+        return isatty(fd) != 0;
+#endif
+    }
+    // ostringstream / file streams: not a terminal (Python file.isatty()).
+    return false;
+}
+
+std::optional<ColorSystem> Console::active_color_system() const {
+    if (options_.color_system.has_value()) return options_.color_system;
+    // Python _detect_color_system.
+    const auto term = []() {
+        const char* t = std::getenv("TERM");
+        return std::string(t ? t : "");
+    }();
+    if (!is_terminal()) return std::nullopt;
+    {  // dumb terminal: TERM in ("dumb", "unknown")
+        auto t = term;
+        for (auto& c : t) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (t == "dumb" || t == "unknown") return std::nullopt;
+    }
+#ifdef _WIN32
+    (void)term;
+    // Win10+ consoles report truecolor via VT features; older ones fall back
+    // to 8-bit. We enable VT processing on init, so truecolor is the match.
+    return options_.legacy_windows ? ColorSystem::Standard : ColorSystem::Truecolor;
+#else
+    const char* ct = std::getenv("COLORTERM");
+    std::string color_term = ct ? ct : "";
+    for (auto& c : color_term) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    // strip()
+    size_t b = color_term.find_first_not_of(" \t"), e = color_term.find_last_not_of(" \t");
+    if (b != std::string::npos) color_term = color_term.substr(b, e - b + 1);
+    else color_term.clear();
+    if (color_term == "truecolor" || color_term == "24bit") return ColorSystem::Truecolor;
+    // TERM rpartition("-") -> _TERM_COLORS.get(suffix, STANDARD)
+    size_t hyphen = term.rfind('-');
+    std::string colors = (hyphen == std::string::npos) ? "" : term.substr(hyphen + 1);
+    if (colors == "256color" || colors == "kitty") return ColorSystem::EightBit;
+    return ColorSystem::Standard;
+#endif
+}
+
+bool Console::no_color() const {
+    if (options_.no_color.has_value()) return *options_.no_color;
+    return no_color_enabled();
 }
 
 // Python Segment.adjust_line_length: crop over-long lines at cell
@@ -577,45 +800,150 @@ std::pair<size_t, size_t> measure_item(const Rule& r, const Console&, const Opti
 }
 
 namespace {
-bool apply_tag(std::string_view tag, Style& st) {
-    if (tag == "bold" || tag == "b") { st.bold = true; return true; }
-    if (tag == "dim" || tag == "d") { st.dim = true; return true; }
-    if (tag == "italic" || tag == "i") { st.italic = true; return true; }
-    if (tag == "underline" || tag == "u") { st.underline = true; return true; }
-    if (tag == "reverse") { st.reverse = true; return true; }
-    if (tag == "red") { st.color = Color::from_ansi(31); return true; }
-    if (tag == "green") { st.color = Color::from_ansi(32); return true; }
-    if (tag == "yellow") { st.color = Color::from_ansi(33); return true; }
-    if (tag == "blue") { st.color = Color::from_ansi(34); return true; }
-    if (tag == "magenta") { st.color = Color::from_ansi(35); return true; }
-    if (tag == "cyan") { st.color = Color::from_ansi(36); return true; }
-    if (tag == "white") { st.color = Color::from_ansi(37); return true; }
-    if (tag == "black") { st.color = Color::from_ansi(30); return true; }
-    if (tag == "bright_red") { st.color = Color::from_ansi(91); return true; }
-    if (tag == "bright_green") { st.color = Color::from_ansi(92); return true; }
-    if (tag == "bright_yellow") { st.color = Color::from_ansi(93); return true; }
-    if (tag == "bright_blue") { st.color = Color::from_ansi(94); return true; }
-    if (tag == "bright_magenta") { st.color = Color::from_ansi(95); return true; }
-    if (tag == "bright_cyan") { st.color = Color::from_ansi(96); return true; }
-    if (tag == "bright_white") { st.color = Color::from_ansi(97); return true; }
-    if (tag == "bright_black") { st.color = Color::from_ansi(90); return true; }
-    if (tag == "on red") { st.bg_color = Color::from_ansi(41); return true; }
-    if (tag == "on green") { st.bg_color = Color::from_ansi(42); return true; }
-    if (tag == "on yellow") { st.bg_color = Color::from_ansi(43); return true; }
-    if (tag == "on blue") { st.bg_color = Color::from_ansi(44); return true; }
-    if (tag == "on magenta") { st.bg_color = Color::from_ansi(45); return true; }
-    if (tag == "on cyan") { st.bg_color = Color::from_ansi(46); return true; }
-    if (tag == "on white") { st.bg_color = Color::from_ansi(47); return true; }
-    if (tag == "on black") { st.bg_color = Color::from_ansi(40); return true; }
-    if (tag == "on bright_red") { st.bg_color = Color::from_ansi(101); return true; }
-    if (tag == "on bright_green") { st.bg_color = Color::from_ansi(102); return true; }
-    if (tag == "on bright_yellow") { st.bg_color = Color::from_ansi(103); return true; }
-    if (tag == "on bright_blue") { st.bg_color = Color::from_ansi(104); return true; }
-    if (tag == "on bright_magenta") { st.bg_color = Color::from_ansi(105); return true; }
-    if (tag == "on bright_cyan") { st.bg_color = Color::from_ansi(106); return true; }
-    if (tag == "on bright_white") { st.bg_color = Color::from_ansi(107); return true; }
-    if (tag == "on bright_black") { st.bg_color = Color::from_ansi(100); return true; }
+// Python STYLE_ATTRIBUTES: markup words that set a style attribute.
+struct AttrWord {
+    const char* name;
+    uint16_t explicit_bit;
+};
+constexpr AttrWord kAttrWords[] = {
+    {"bold", 0x0001},   {"b", 0x0001},
+    {"dim", 0x0002},    {"d", 0x0002},
+    {"italic", 0x0004}, {"i", 0x0004},
+    {"underline", 0x0008}, {"u", 0x0008},
+    {"underline2", 0x0200}, {"uu", 0x0200},
+    {"blink", 0x0040},
+    {"blink2", 0x0080},
+    {"reverse", 0x0010}, {"r", 0x0010},
+    {"conceal", 0x0100}, {"c", 0x0100},
+    {"strike", 0x0020},  {"s", 0x0020},
+    {"frame", 0x0400},
+    {"encircle", 0x0800},
+    {"overline", 0x1000}, {"o", 0x1000},
+};
+
+// Python Color.parse: "default", ANSI_COLOR_NAMES (256 words), and the
+// RE_COLOR forms  #rrggbb / color(N) / rgb(r,g,b) (ints, spaces allowed).
+// "color(N)" with N<16 is a STANDARD color in Python (SGR 30-37/90-97),
+// N>=16 is EIGHT_BIT (SGR 38;5;N).
+bool parse_color_word(std::string_view w, Color& out) {
+    auto lower_copy = [w]() {
+        std::string s(w);
+        for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return s;
+    };
+    std::string lw = lower_copy();
+    static const struct { const char* name; int ansi; } kNamed[] = {
+        {"black", 30},    {"red", 31},     {"green", 32},    {"yellow", 33},
+        {"blue", 34},     {"magenta", 35}, {"cyan", 36},     {"white", 37},
+        {"bright_black", 90}, {"bright_red", 91}, {"bright_green", 92},
+        {"bright_yellow", 93}, {"bright_blue", 94}, {"bright_magenta", 95},
+        {"bright_cyan", 96}, {"bright_white", 97},
+    };
+    for (const auto& n : kNamed)
+        if (lw == n.name) { out = Color::from_ansi(static_cast<uint8_t>(n.ansi)); return true; }
+    if (lw == "default") { out = Color::dflt(); return true; }
+    if (lw.size() > 7 && lw.compare(0, 6, "color(") == 0 && lw.back() == ')') {
+        const std::string_view num = lw.substr(6, lw.size() - 7);
+        int n = 0;
+        for (char c : num) {
+            if (c < '0' || c > '9') return false;
+            n = n * 10 + (c - '0');
+        }
+        if (n > 255) return false;
+        if (n < 16) {
+            out = Color::from_ansi(static_cast<uint8_t>(n < 8 ? 30 + n : 90 + n - 8));
+            return true;
+        }
+        out = Color::charcoal(static_cast<uint8_t>(n));
+        return true;
+    }
+    if (w.size() == 7 && w[0] == '#') {
+        auto hex = [](std::string_view s, int& v) {
+            v = 0;
+            for (char c : s) {
+                int d;
+                if (c >= '0' && c <= '9') d = c - '0';
+                else if (c >= 'a' && c <= 'f') d = c - 'a' + 10;
+                else if (c >= 'A' && c <= 'F') d = c - 'A' + 10;
+                else return false;
+                v = v * 16 + d;
+            }
+            return true;
+        };
+        int r, g, b;
+        if (!hex(w.substr(1, 2), r) || !hex(w.substr(3, 2), g) || !hex(w.substr(5, 2), b))
+            return false;
+        out = Color::rgb(static_cast<uint8_t>(r), static_cast<uint8_t>(g),
+                         static_cast<uint8_t>(b));
+        return true;
+    }
+    if (w.size() > 5 && w.compare(0, 4, "rgb(") == 0 && w.back() == ')') {
+        // Python: components = color_rgb.split(","); int() each (surrounding
+        // whitespace allowed, empty rejected).
+        std::string inner(w.substr(4, w.size() - 5));
+        std::vector<std::string> parts;
+        std::string cur;
+        for (char c : inner) {
+            if (c == ',') {
+                parts.push_back(cur);
+                cur.clear();
+            } else
+                cur.push_back(c);
+        }
+        parts.push_back(cur);
+        if (parts.size() != 3) return false;
+        int vals[3];
+        for (int p = 0; p < 3; ++p) {
+            size_t b = parts[p].find_first_not_of(" \t");
+            size_t e = parts[p].find_last_not_of(" \t");
+            if (b == std::string::npos) return false;
+            int n = 0;
+            for (size_t q = b; q <= e; ++q) {
+                char c = parts[p][q];
+                if (c < '0' || c > '9') return false;
+                n = n * 10 + (c - '0');
+            }
+            vals[p] = n;
+        }
+        if (vals[0] > 255 || vals[1] > 255 || vals[2] > 255) return false;
+        out = Color::rgb(static_cast<uint8_t>(vals[0]), static_cast<uint8_t>(vals[1]),
+                         static_cast<uint8_t>(vals[2]));
+        return true;
+    }
     return false;
+}
+
+// Applies one style word to `st` (Python: StyleStack.push(Style.parse(word))
+// semantics — the word is a full style definition; only the single-word
+// forms occur in practice via next_tag_word's "on X" merge).
+bool apply_tag(std::string_view tag, Style& st) {
+    for (const auto& a : kAttrWords) {
+        if (tag == a.name) {
+            st.explicit_bits = static_cast<uint16_t>(st.explicit_bits | a.explicit_bit);
+            switch (a.explicit_bit) {
+            case 0x0001: st.bold = true; break;
+            case 0x0002: st.dim = true; break;
+            case 0x0004: st.italic = true; break;
+            case 0x0008: st.underline = true; break;
+            case 0x0200: st.underline2 = true; break;
+            case 0x0040: st.blink = true; break;
+            case 0x0080: st.blink2 = true; break;
+            case 0x0010: st.reverse = true; break;
+            case 0x0100: st.conceal = true; break;
+            case 0x0020: st.strike = true; break;
+            case 0x0400: st.frame = true; break;
+            case 0x0800: st.encircle = true; break;
+            case 0x1000: st.overline = true; break;
+            }
+            return true;
+        }
+    }
+    if (tag.rfind("on ", 0) == 0) {
+        Color bg;
+        return parse_color_word(tag.substr(3), bg) && (st.bg_color = bg, true);
+    }
+    Color fg;
+    return parse_color_word(tag, fg) && (st.color = fg, true);
 }
 
 // Next tag word; merges the two-word "on <color>" form into one token
@@ -653,21 +981,73 @@ bool is_tag_start(char c) {
     return (c >= 'a' && c <= 'z') || c == '#' || c == '/' || c == '@';
 }
 
-// Canonical name for close-tag matching: alias words (b/i/u/d) mapped to
-// their full names, words space-joined ("on yellow" stays "on yellow").
+// Python str(Style.parse(tag)) normalization for close-tag matching:
+// attributes canonicalized (b→bold, i→italic, u→underline, d→dim, r→reverse,
+// c→conceal, s→strike, o→overline, uu→underline2) and reordered into
+// STYLE_ATTRIBUTES bit order, then the color word (verbatim), then "on X".
+// If any word is unknown, Style.parse fails and normalize falls back to
+// tag.strip().lower().
+std::string lower_all(std::string_view sv) {
+    std::string out(sv);
+    for (auto& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return out;
+}
+
 std::string canon_tag_name(std::string_view tag) {
-    std::string out;
+    static const char* kCanonOrder[] = {
+        "bold", "dim", "italic", "underline", "blink", "blink2", "reverse",
+        "conceal", "strike", "underline2", "frame", "encircle", "overline",
+    };
+    auto alias = [](std::string_view w) -> std::string_view {
+        if (w == "b") return "bold";
+        if (w == "i") return "italic";
+        if (w == "u") return "underline";
+        if (w == "d") return "dim";
+        if (w == "r") return "reverse";
+        if (w == "c") return "conceal";
+        if (w == "s") return "strike";
+        if (w == "o") return "overline";
+        if (w == "uu") return "underline2";
+        return w;
+    };
+    std::vector<std::string> attrs;  // canonical attribute names found
+    std::string color, bg;
     size_t tstart = 0;
     while (tstart < tag.size()) {
         std::string_view word = next_tag_word(tag, tstart);
-        std::string w(word);
-        if (w == "b") w = "bold";
-        else if (w == "i") w = "italic";
-        else if (w == "u") w = "underline";
-        else if (w == "d") w = "dim";
-        if (!out.empty()) out += ' ';
-        out += w;
+        std::string_view canon = alias(word);
+        bool is_attr = false;
+        for (const auto* name : kCanonOrder)
+            if (canon == name) {
+                if (std::find(attrs.begin(), attrs.end(), std::string(name)) == attrs.end())
+                    attrs.push_back(name);
+                is_attr = true;
+                break;
+            }
+        if (is_attr) continue;
+        if (word.size() > 3 && word.compare(0, 3, "on ") == 0)
+            bg = std::string(word);  // last background wins
+        else {
+            Color tmp;
+            if (parse_color_word(word, tmp)) color = std::string(word);  // last color wins
+            else return lower_all(tag);  // Style.parse failure -> strip().lower()
+        }
     }
+    std::string out;
+    for (const auto* name : kCanonOrder)  // attributes in canonical bit order
+        if (std::find(attrs.begin(), attrs.end(), std::string(name)) != attrs.end()) {
+            if (!out.empty()) out += ' ';
+            out += name;
+        }
+    if (!color.empty()) {
+        if (!out.empty()) out += ' ';
+        out += color;
+    }
+    if (!bg.empty()) {
+        if (!out.empty()) out += ' ';
+        out += bg;
+    }
+    if (out.empty()) return lower_all(tag);
     return out;
 }
 } // namespace

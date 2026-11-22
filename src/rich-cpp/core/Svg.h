@@ -58,6 +58,12 @@ inline int sgr_to_palette(uint8_t ansi) {
 inline Triplet truecolor(const Color& c, bool foreground) {
     if (c.type == Color::Type::Rgb) return {c.r, c.g, c.b};
     if (c.type == Color::Type::Standard) return svg_theme_ansi()[sgr_to_palette(c.ansi)];
+    if (c.type == Color::Type::Charcoal) {
+        int r, g, b;
+        Color::charcoal_rgb(c.ansi, r, g, b);
+        return {static_cast<uint8_t>(r), static_cast<uint8_t>(g),
+                static_cast<uint8_t>(b)};
+    }
     return foreground ? theme_foreground() : theme_background();
 }
 
@@ -98,6 +104,14 @@ inline std::string py_repr_color(const Color& c) {
         out += ")";
         return out;
     }
+    if (c.type == Color::Type::Charcoal) {
+        std::string out = "Color('color(" + std::to_string(c.ansi) +
+                          ")', ColorType.EIGHT_BIT, number=" + std::to_string(c.ansi) + ")";
+        return out;
+    }
+    if (c.type == Color::Type::Default) {
+        return "Color('default', ColorType.DEFAULT)";
+    }
     if (c.type == Color::Type::Rgb) {
         std::string out = "Color('#";
         char buf[7];
@@ -135,8 +149,15 @@ inline std::string py_repr_style(const Style& st) {
     push_flag("dim", st.dim, (st.explicit_bits & 0x02) != 0);
     push_flag("italic", st.italic, (st.explicit_bits & 0x04) != 0);
     push_flag("underline", st.underline, (st.explicit_bits & 0x08) != 0);
+    push_flag("blink", st.blink, (st.explicit_bits & 0x40) != 0);
+    push_flag("blink2", st.blink2, (st.explicit_bits & 0x80) != 0);
     push_flag("reverse", st.reverse, (st.explicit_bits & 0x10) != 0);
+    push_flag("conceal", st.conceal, (st.explicit_bits & 0x100) != 0);
     push_flag("strike", st.strike, (st.explicit_bits & 0x20) != 0);
+    push_flag("underline2", st.underline2, (st.explicit_bits & 0x200) != 0);
+    push_flag("frame", st.frame, (st.explicit_bits & 0x400) != 0);
+    push_flag("encircle", st.encircle, (st.explicit_bits & 0x800) != 0);
+    push_flag("overline", st.overline, (st.explicit_bits & 0x1000) != 0);
     if (!st.link.empty()) fields.push_back("link='" + st.link + "'");
     std::string out = "Style(";
     for (size_t i = 0; i < fields.size(); ++i) {

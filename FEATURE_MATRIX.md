@@ -7,9 +7,9 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | **Core Architecture** | `Segment` (text, style) | `rich.segment` | `rich::Segment` | ✅ Done | ✅ Yes | Core rendering unit |
 | | `Style` (colors, attributes) | `rich.style` | `rich::Style` | ✅ Done | ✅ Yes | bold, dim, italic, underline, reverse, 16 colors, bright colors, rgb |
 | | `Console` | `rich.console` | `rich::Console` | ✅ Done | ✅ Yes | print, rule, export_text, record mode, Windows VT init |
-| | `Color` (RGB / 256 / 16 / Auto) | `rich.color` | `rich::Color` | 🟡 Partial | ✅ Yes | 16 + bright 16 ANSI + RGB truecolor; 256-color palette not implemented (see below) |
-| | 256-color palette | `rich.color` | — | ❌ Not Started | ❌ No | `Color.from_ansi(0-255)` / 6×6×6 cube + grayscale ramp; C++ `Color::Type` is `{None, Standard, Rgb}` only |
-| | Extra `Style` attributes (blink, overline, double-underline, curve upper/lower, frame, enclose) | `rich.style` | — | ❌ Not Started | ❌ No | SGR 5 / 53 / 21 / 59 / 61 / 51-52 / 54; C++ Style carries bold, dim, italic, underline, reverse, strike, colors, link |
+| | `Color` (RGB / 256 / 16 / Auto) | `rich.color` | `rich::Color` | ✅ Done | ✅ Yes | 16 + bright 16 ANSI + 256-color `color(N)` + RGB truecolor + `default`; `downgrade_color` (256 via colorsys HLS + cube, 16 via BT.601 palette match) is byte-exact Python parity; oracles `style_sgr`, `style_sgr_256` |
+| | 256-color palette | `rich.color` | `rich::Color::charcoal(0-255)` | ✅ Done | ✅ Yes | 6×6×6 cube + 24-step grayscale ramp; SGR `38;5;N` / `48;5;N`; `color(N<16)` keeps STANDARD (SGR 30-37/90-97) like Python; oracles `style_sgr`, `style_sgr_256` |
+| | Extra `Style` attributes (blink, blink2, conceal, underline2, frame, encircle, overline) | `rich.style` | `rich::Style` | ✅ Done | ✅ Yes | SGR 5 / 6 / 8 / 21 / 51 / 52 / 53 emitted in Python `_make_ansi_codes` order, only when set-and-explicit; markup names + aliases `uu`, `c`, `s`, `o`, `r` (no curves exist in rich 15.0.0); oracles `style_sgr`, `markup_basic` |
 | | `Renderable` protocol | `rich.protocol` | `rich::Renderable` (C++20 Concept) | ✅ Done | ✅ Yes | Non-intrusive ADL dispatch (`render_item`, `measure_item`) |
 | | Type-erased wrapper | Python Duck Typing | `rich::AnyRenderable` | ✅ Done | ✅ Yes | Value-semantic wrapper (`std::shared_ptr<const Concept>`) |
 | | Fluent / Pipe syntax | N/A (Python decorators) | `operator\|` | ✅ Done | ✅ Yes | `content \| pad(1) \| panel({...})`; exercised by `padding_basic` |
@@ -87,7 +87,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 - 🚫 — oracle impossible: nondeterministic output (Traceback addresses/symbols, wall-clock timestamps), live-environment state (terminal size), interactive I/O (`Console.input()`), or not portable to C++.
 
 ### Coverage summary
-- **36 oracle cases** (36/36 byte-exact) cover every deterministic ✅ row.
-- **25 rows ❌ Not Started** — portable but not implemented (largest: Progress custom columns, spinner registry, themes, `Text.from_ansi`, 256-color palette, Syntax lexer/theme breadth, Table/Panel decoration).
+- **38 oracle cases** (38/38 byte-exact) cover every deterministic ✅ row.
+- **23 rows ❌ Not Started** — portable but not implemented (largest: Progress custom columns, spinner registry, themes, `Text.from_ansi`, Syntax lexer/theme breadth, Table/Panel decoration).
 - **4 rows 🚫** (Status) — `scope()`, Jupyter/IPython, `logging` handler, `Pretty` struct introspection.
 - **8 rows 🚫** (Oracle column) — Traceback, terminal-size detection, `Console.log()`, `Console.input()`, + the 4 not-portable rows: byte-exact verification not possible.
