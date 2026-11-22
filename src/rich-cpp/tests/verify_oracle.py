@@ -41,6 +41,8 @@ TEST_CASES = [
     "track_basic",
     "style_sgr",
     "style_sgr_256",
+    "log_basic",
+    "log_sgr",
 ]
 
 import os

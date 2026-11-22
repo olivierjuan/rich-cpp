@@ -12,6 +12,8 @@
 #include <utility>
 #include <cstdint>
 #include <algorithm>
+#include <cctype>
+#include <ctime>
 #include <optional>
 
 namespace rich {
@@ -222,6 +224,18 @@ struct ConsoleOptions {
     std::optional<bool> no_color;
 };
 
+// Python Console.log options. Python resolves time from get_datetime()
+// (injectable) and the caller's file/line from the stack; C++ has no
+// portable stack walk, so path/line_no are explicit.
+struct LogOptions {
+    bool show_time{true};
+    bool show_path{false};
+    std::string path;  // e.g. "main.cpp" (rendered with style log.path: dim)
+    int line_no{0};    // appended as ":42"
+    std::optional<std::tm> time;  // nullopt = current local time
+    bool omit_repeated_times{true};  // same formatted time -> blanked column
+};
+
 class RICH_EXPORT Console {
 public:
     explicit Console(std::ostream& os = std::cout, ConsoleOptions options = {}) noexcept
@@ -230,6 +244,10 @@ public:
     void print(const AnyRenderable& ar);
     void print(std::string_view markup_text);
     void rule(std::string_view title = "");
+    // Python Console.log: [time] message [path:line] grid row. Time column
+    // styled log.time (dim cyan), path styled log.path (dim), message
+    // overflow=fold at the available width; repeated times are blanked.
+    void log(std::initializer_list<std::string_view> objects, LogOptions opts = {});
 
     // Write raw bytes (VT escapes, etc.) directly to the underlying stream.
     // Not recorded in export_text(); intended for live animation only.
@@ -274,10 +292,14 @@ public:
         const Style* style, bool pad = true) const;
 
 private:
+    // Write a flattened segment stream (SGR per active color system, plain
+    // otherwise; records when options_.record). Shared by print/log.
+    void emit_segments(const std::vector<Segment>& segs);
     std::ostream& os_;
     ConsoleOptions options_;
     std::string record_buffer_;
     std::vector<Segment> record_segments_;
+    std::string last_log_time_;  // omit_repeated_times state (per instance)
 };
 
 // Core types above are complete here. The wrapping engine (Text.h) needs

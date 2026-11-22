@@ -13,7 +13,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | `Renderable` protocol | `rich.protocol` | `rich::Renderable` (C++20 Concept) | ✅ Done | ✅ Yes | Non-intrusive ADL dispatch (`render_item`, `measure_item`) |
 | | Type-erased wrapper | Python Duck Typing | `rich::AnyRenderable` | ✅ Done | ✅ Yes | Value-semantic wrapper (`std::shared_ptr<const Concept>`) |
 | | Fluent / Pipe syntax | N/A (Python decorators) | `operator\|` | ✅ Done | ✅ Yes | `content \| pad(1) \| panel({...})`; exercised by `padding_basic` |
-| | `Console.log()` (timestamp/path/level log lines) | `rich.console`, `rich._log_render` | — | ❌ Not Started | 🚫 | `log()` method + log-line rendering (time, optional file:line, level word, message); wall-clock timestamp makes output nondeterministic |
+| | `Console.log()` (timestamp/path/level log lines) | `rich.console`, `rich._log_render` | `Console::log` + `LogOptions` | ✅ Done | ✅ Yes | `log()` method + log-line grid (time column, message fold, path column); C++ takes path/line explicitly (`LogOptions{show_path, path, line_no}`) where Python walks the stack; injected clock via `LogOptions::time` (`tm`) mirrors Python's `get_datetime` — oracles `log_basic`, `log_sgr`; `log_locals` (scope dump) not ported |
 | | Theme system (style-name mapping, `push_theme`/`pop_theme`) | `rich.theme`, `rich.default_styles` | — | ❌ Not Started | ❌ No | Console-level named-style overrides; Markdown has an internal theme table, no console-wide `Theme` |
 | | `Console.input()` (styled prompt input) | `rich.console` | — | ❌ Not Started | 🚫 | Interactive stdin read with prompt markup; not a pure render, not reproducible in CI |
 | | `Console.capture()` / `screen()` + `Screen` (alt screen buffer) | `rich.console`, `rich.screen` | — | ❌ Not Started | ❌ No | In-memory render capture; alternate-screen renderable |
@@ -70,7 +70,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | Record / Export (Text) | `rich.console` | `Console::export_text` | ✅ Done | ✅ Yes | Records terminal output to buffer |
 | | Export to SVG | `rich.console` | `Console::export_svg` | ✅ Done | ✅ Yes | SVG terminal snapshot (`CONSOLE_SVG_FORMAT` port, `unique_id` from segment-repr adler32) |
 | | Export to HTML | `rich.console` | `Console::export_html` | ✅ Done | ✅ Yes | HTML terminal snapshot (`DEFAULT_TERMINAL_THEME`, class-based CSS); oracle `export_html` |
-| | Automated Oracle test suite | Tests | `src/rich-cpp/tests/verify_oracle.py` | ✅ Done | ✅ Yes | 36/36 exact byte-level parity checks with Python Rich |
+| | Automated Oracle test suite | Tests | `src/rich-cpp/tests/verify_oracle.py` | ✅ Done | ✅ Yes | 40/40 exact byte-level parity checks with Python Rich |
 
 ---
 
@@ -84,10 +84,10 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 **"Verified vs Oracle" column**
 - ✅ — byte-exact in the automated suite.
 - ❌ — oracle-able (deterministic render), but not yet checked.
-- 🚫 — oracle impossible: nondeterministic output (Traceback addresses/symbols, wall-clock timestamps), live-environment state (terminal size), interactive I/O (`Console.input()`), or not portable to C++.
+- 🚫 — oracle impossible: nondeterministic output (Traceback addresses/symbols), live-environment state (terminal size), interactive I/O (`Console.input()`), or not portable to C++. (Wall-clock timestamps are oracle-able via clock injection — see `Console.log()`.)
 
 ### Coverage summary
-- **38 oracle cases** (38/38 byte-exact) cover every deterministic ✅ row.
-- **23 rows ❌ Not Started** — portable but not implemented (largest: Progress custom columns, spinner registry, themes, `Text.from_ansi`, Syntax lexer/theme breadth, Table/Panel decoration).
+- **40 oracle cases** (40/40 byte-exact) cover every deterministic ✅ row.
+- **22 rows ❌ Not Started** — portable but not implemented (largest: Progress custom columns, spinner registry, themes, `Text.from_ansi`, Syntax lexer/theme breadth, Table/Panel decoration).
 - **4 rows 🚫** (Status) — `scope()`, Jupyter/IPython, `logging` handler, `Pretty` struct introspection.
-- **8 rows 🚫** (Oracle column) — Traceback, terminal-size detection, `Console.log()`, `Console.input()`, + the 4 not-portable rows: byte-exact verification not possible.
+- **7 rows 🚫** (Oracle column) — Traceback, terminal-size detection, `Console.input()`, + the 4 not-portable rows: byte-exact verification not possible.

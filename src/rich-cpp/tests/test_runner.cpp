@@ -475,6 +475,51 @@ int main(int argc, char* argv[]) {
         sc.print(std::string_view("[rgb(100,100,100)]e[/]"));
         std::cout << s_oss.str();
         return 0;
+    } else if (test_name == "log_basic") {
+        // Python resolves the caller path/line from its stack; C++ takes
+        // them explicitly — the values mirror oracle_gen.py's log() lines.
+        rich::ConsoleOptions l_opts{.width = 60, .record = true, .legacy_windows = false};
+        std::ostringstream l_oss;
+        rich::Console lc(l_oss, l_opts);
+        std::tm t{};
+        t.tm_year = 2026 - 1900; t.tm_mon = 6; t.tm_mday = 22;
+        t.tm_hour = 21; t.tm_min = 53; t.tm_sec = 33;
+        auto lo = [t](int line) {
+            rich::LogOptions o;
+            o.time = t;
+            o.show_path = true;
+            o.path = "oracle_gen.py";
+            o.line_no = line;
+            return o;
+        };
+        lc.log({std::string_view("hello world"), std::string_view("42")}, lo(330));
+        lc.log({std::string_view("hello world"), std::string_view("42")}, lo(331));
+        lc.log({std::string_view("[red]styled[/] message")}, lo(332));
+        const std::string fifty(50, 'a');
+        lc.log({std::string_view(fifty)}, lo(333));
+        lc.log({}, lo(334));
+        std::cout << lc.export_text();
+        return 0;
+    } else if (test_name == "log_sgr") {
+        rich::ConsoleOptions l_opts{.width = 60, .record = false,
+                                    .legacy_windows = false,
+                                    .force_terminal = true,
+                                    .color_system = rich::ColorSystem::Truecolor,
+                                    .no_color = false};
+        std::ostringstream l_oss;
+        rich::Console lc(l_oss, l_opts);
+        std::tm t{};
+        t.tm_year = 2026 - 1900; t.tm_mon = 6; t.tm_mday = 22;
+        t.tm_hour = 21; t.tm_min = 53; t.tm_sec = 33;
+        auto lo = [t] {
+            rich::LogOptions o;
+            o.time = t;
+            return o;
+        };
+        lc.log({std::string_view("[red]hello[/] world")}, lo());
+        lc.log({std::string_view("again")}, lo());
+        std::cout << l_oss.str();
+        return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
         return 1;

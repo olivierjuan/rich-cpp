@@ -292,7 +292,7 @@ def generate_python_oracle(test_name: str) -> str:
         # Raw SGR stream: forced terminal, truecolor, no_color off. Compare
         # sink bytes directly (not export_text): one print per line.
         sink2 = io.StringIO()
-        c2 = Console(file=sink2, width=60, force_terminal=True,
+        c2 = Console(file=sink2, width=60, height=25, force_terminal=True,
                      color_system="truecolor", no_color=False,
                      legacy_windows=False)
         c2.print("[red]a[/][bright_red]b[/]")
@@ -317,6 +317,36 @@ def generate_python_oracle(test_name: str) -> str:
         c2.print("[red]c[/]")
         c2.print("[on rgb(200,100,50)]d[/]")
         c2.print("[rgb(100,100,100)]e[/]")
+        return sink2.getvalue()
+    elif test_name == "log_basic":
+        # Console.log with an injected clock (get_datetime) is fully
+        # deterministic: time column, omitted repeated time, styled message,
+        # fold at the message width, empty log, and the auto-resolved
+        # caller path column (oracle_gen.py:<line>).
+        from datetime import datetime
+        sink2 = io.StringIO()
+        c2 = Console(file=sink2, width=60, record=True, legacy_windows=False,
+                     get_datetime=lambda: datetime(2026, 7, 22, 21, 53, 33))
+        c2.log("hello world", 42)
+        c2.log("hello world", 42)
+        c2.log("[red]styled[/] message")
+        c2.log("a" * 50)
+        c2.log()
+        return sink2.getvalue()
+    elif test_name == "log_sgr":
+        # Raw SGR bytes for the log grid: time cell is dim+cyan (two runs:
+        # text + pad space), repeated time is blanked but stays styled.
+        # log_path=False: with a path, Python wraps the path cell in an OSC 8
+        # hyperlink whose id is a non-deterministic counter, so the path is
+        # covered by log_basic (export_text strips links) instead.
+        from datetime import datetime
+        sink2 = io.StringIO()
+        c2 = Console(file=sink2, width=60, height=25, force_terminal=True,
+                     color_system="truecolor", no_color=False, log_path=False,
+                     legacy_windows=False,
+                     get_datetime=lambda: datetime(2026, 7, 22, 21, 53, 33))
+        c2.log("[red]hello[/] world")
+        c2.log("again")
         return sink2.getvalue()
     return c.export_text()
 

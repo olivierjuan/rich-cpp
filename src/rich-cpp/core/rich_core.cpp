@@ -393,26 +393,14 @@ std::vector<Segment> split_and_crop_lines(std::vector<Segment>&& segments, size_
 }
 } // namespace
 
-void Console::print(const AnyRenderable& ar) {
-    init_terminal();
-    size_t active_w = (options_.width > 0) ? options_.width : detect_terminal_width();
-    // height stays 0 (= unset), mirroring Python options.height=None on plain print.
-    // Layouts query Console::height() instead.
-    Options opt{.width = active_w};
-    auto segments = ar.render(*this, opt);
-    // Python print(): renderable segments pass through
-    // Segment.split_and_crop_lines(width, pad=False); each '\n' becomes a
-    // standalone style=None segment, over-wide lines crop at cell boundaries.
-    // (Renderables carry their own trailing newline, cf. Text end="\n".)
-    auto out = split_and_crop_lines(std::move(segments), active_w);
-
+void Console::emit_segments(const std::vector<Segment>& segs) {
     // Python _render_buffer: auto-detected None color system (non-TTY or
     // dumb terminal) renders plain text — no SGR, no OSC 8 links; no_color
     // drops colors only (Segment.remove_color); otherwise full SGR downgraded
     // to the active color system.
     const auto cs = active_color_system();
     const bool strip_color = cs.has_value() && no_color();
-    for (const auto& s : out) {
+    for (const auto& s : segs) {
         const bool styled = cs.has_value() && has_style(s.style, *cs, strip_color);
         const bool linked =
             cs.has_value() && !s.style.link.empty() && !options_.legacy_windows;
@@ -427,6 +415,175 @@ void Console::print(const AnyRenderable& ar) {
             record_segments_.push_back(s);
         }
     }
+}
+
+void Console::print(const AnyRenderable& ar) {
+    init_terminal();
+    size_t active_w = (options_.width > 0) ? options_.width : detect_terminal_width();
+    // height stays 0 (= unset), mirroring Python options.height=None on plain print.
+    // Layouts query Console::height() instead.
+    Options opt{.width = active_w};
+    auto segments = ar.render(*this, opt);
+    // Python print(): renderable segments pass through
+    // Segment.split_and_crop_lines(width, pad=False); each '\n' becomes a
+    // standalone style=None segment, over-wide lines crop at cell boundaries.
+    // (Renderables carry their own trailing newline, cf. Text end="\n".)
+    auto out = split_and_crop_lines(std::move(segments), active_w);
+    emit_segments(out);
+}
+
+namespace {
+// Python default theme: log.time = cyan dim; log.path = dim.
+Style log_time_style() {
+    Style s;
+    s.dim = true;
+    s.explicit_bits = 0x0002;
+    s.color = Color::from_ansi(36);
+    return s;
+}
+Style log_path_style() {
+    Style s;
+    s.dim = true;
+    s.explicit_bits = 0x0002;
+    return s;
+}
+
+// Split a flat segment stream into physical lines at '\n'.
+std::vector<std::vector<Segment>> split_physical_lines(std::vector<Segment> segs) {
+    std::vector<std::vector<Segment>> lines;
+    std::vector<Segment> cur;
+    for (auto& s : segs) {
+        size_t i = 0;
+        while (i < s.text.size()) {
+            const size_t nl = s.text.find('\n', i);
+            if (nl == std::string::npos) {
+                cur.push_back({s.text.substr(i), s.style});
+                break;
+            }
+            if (nl > i) cur.push_back({s.text.substr(i, nl - i), s.style});
+            lines.push_back(std::move(cur));
+            cur.clear();
+            i = nl + 1;
+        }
+    }
+    lines.push_back(std::move(cur));
+    return lines;
+}
+
+// Table overflow="fold": wrap a physical line at <= N cells, cutting at
+// cell boundaries (never splitting a codepoint).
+std::vector<std::vector<Segment>> fold_line(const std::vector<Segment>& line, size_t N) {
+    std::vector<std::vector<Segment>> out;
+    std::vector<Segment> cur;
+    size_t cells = 0;
+    auto flush = [&] {
+        out.push_back(std::move(cur));
+        cur.clear();
+        cells = 0;
+    };
+    for (const auto& s : line) {
+        size_t i = 0;
+        while (i < s.text.size()) {
+            if (cells >= N) flush();
+            std::string cut = crop_cells(s.text.substr(i), N - cells);
+            if (cut.empty()) {
+                ++i;  // zero-width glyph at a boundary: drop
+                continue;
+            }
+            cur.push_back({cut, s.style});
+            cells += unicode::string_cell_len(cut);
+            i += cut.size();
+        }
+    }
+    flush();
+    return out;
+}
+} // namespace
+
+void Console::log(std::initializer_list<std::string_view> objects, LogOptions opts) {
+    init_terminal();
+    const size_t W = (options_.width > 0) ? options_.width : detect_terminal_width();
+
+    // Python: no objects -> (NewLine(),) -> an empty message. Objects are
+    // joined with " " (sep default) after markup parsing.
+    std::vector<Segment> msg_segs;
+    bool first = true;
+    for (std::string_view obj : objects) {
+        if (!first) msg_segs.push_back({std::string(" "), Style{}});
+        auto parsed = parse_markup(obj);
+        msg_segs.insert(msg_segs.end(), parsed.begin(), parsed.end());
+        first = false;
+    }
+
+    std::string time_str;
+    if (opts.show_time) {
+        std::tm tm_now{};
+        if (opts.time.has_value()) {
+            tm_now = *opts.time;
+        } else {
+            const std::time_t now = std::time(nullptr);
+#ifdef _WIN32
+            localtime_s(&tm_now, &now);
+#else
+            localtime_r(&now, &tm_now);
+#endif
+        }
+        char buf[16];
+        std::strftime(buf, sizeof buf, "%H:%M:%S", &tm_now);
+        time_str = std::string("[") + buf + "]";
+    }
+    const bool omit = opts.show_time && opts.omit_repeated_times &&
+                      !time_str.empty() && last_log_time_ == time_str;
+    if (opts.show_time) last_log_time_ = time_str;
+
+    const size_t tcol = opts.show_time ? time_str.size() : 0;
+    std::string path_str;
+    if (opts.show_path && !opts.path.empty()) {
+        path_str = opts.path;
+        if (opts.line_no > 0) path_str += ":" + std::to_string(opts.line_no);
+    }
+    const size_t pcol = path_str.size();
+    size_t N = W;
+    if (opts.show_time) N -= tcol + 1;  // time cell + its styled pad space
+    if (!path_str.empty()) N -= pcol + 1;
+    if (N > W) N = W;
+
+    const auto physical = split_physical_lines(std::move(msg_segs));
+    const Style time_style = log_time_style();
+    const Style path_style = log_path_style();
+
+    // Table.grid(padding=(0,1)) layout, one grid row per physical message
+    // line: [time cell][1][message cell (fold, padded to N)][1][path cell].
+    // The time cell's trailing pad space is part of the (styled) time cell;
+    // the message pad and the pre-path separator are unstyled.
+    std::vector<Segment> flat;
+    for (size_t li = 0; li < physical.size(); ++li) {
+        const auto folded = fold_line(physical[li], N);
+        for (size_t fi = 0; fi < folded.size(); ++fi) {
+            const bool first_line = (li == 0 && fi == 0);
+            if (opts.show_time) {
+                flat.push_back({first_line && !omit ? time_str : std::string(tcol, ' '),
+                                time_style});
+                flat.push_back({std::string(" "), time_style});
+            }
+            size_t cells = 0;
+            for (const auto& s : folded[fi])
+                cells += unicode::string_cell_len(s.text);
+            for (const auto& s : folded[fi]) flat.push_back(s);
+            if (cells < N) flat.push_back({std::string(N - cells, ' '), Style{}});
+            if (!path_str.empty()) {
+                flat.push_back({std::string(" "), Style{}});
+                flat.push_back(Segment{
+                    first_line ? std::string(path_str) : std::string(pcol, ' '),
+                    first_line ? path_style : Style{}});
+            }
+            if (fi + 1 < folded.size() || li + 1 < physical.size())
+                flat.push_back({std::string("\n"), Style{}});
+        }
+        // Python Table rows end with a '\n' (same as print's trailing newline).
+        flat.push_back({std::string("\n"), Style{}});
+    }
+    emit_segments(flat);
 }
 
 void Console::print(std::string_view markup_text) {
