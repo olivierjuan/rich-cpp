@@ -13,6 +13,9 @@
 #include <ProgressTracker.h>
 #include <Pretty.h>
 #include <json/Json.h>
+#include <ProgressBar.h>
+#include <highlight/Syntax.h>
+#include <markdown/Markdown.h>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -319,6 +322,78 @@ int main(int argc, char* argv[]) {
                                        std::string(90, 'y') + "\"}"));
         jc.print(rich::json_view::json("{\"u\": \"\\u6f22\\u5b57\", \"n\": NaN, \"inf\": Infinity}"));
         std::cout << jc.export_text();
+        return 0;
+    } else if (test_name == "syntax_basic") {
+        rich::ConsoleOptions s_opts{.width = 40, .record = true, .legacy_windows = false};
+        rich::Console sc(oss, s_opts);
+        const std::string py_code = "def fib(n):\n"
+                                    "    \"\"\"Return the nth Fibonacci number.\"\"\"\n"
+                                    "    if n <= 1:\n"
+                                    "        return n\n"
+                                    "    a, b = 0, 1\n"
+                                    "    for _ in range(n - 1):\n"
+                                    "        a, b = b, a + b\n"
+                                    "    return a + b\n";
+        sc.print(rich::highlight::syntax(py_code, "python"));
+        const std::string cpp_code = "int main() {\n"
+                                     "    // entry point\n"
+                                     "    int total = 0;\n"
+                                     "    for (int i = 1; i <= 10; ++i) {\n"
+                                     "        total += i;\n"
+                                     "    }\n"
+                                     "    return total;\n"
+                                     "}\n";
+        rich::highlight::SyntaxOptions so;
+        so.line_numbers = true;
+        so.start_line = 10;
+        so.highlight_lines = {12};
+        sc.print(rich::highlight::syntax(cpp_code, "cpp", so));
+        sc.print(rich::highlight::syntax("plain text\nwith punctuation, and words like 42\n",
+                                         "text"));
+        rich::highlight::SyntaxOptions so2;
+        so2.line_numbers = true;
+        so2.word_wrap = true;
+        sc.print(rich::highlight::syntax(py_code, "python", so2));
+        std::cout << sc.export_text();
+        return 0;
+    } else if (test_name == "markdown_basic") {
+        rich::ConsoleOptions m_opts{.width = 60, .record = true, .legacy_windows = false};
+        rich::Console mc(oss, m_opts);
+        const std::string doc = "# Heading One\n"
+                                "\n"
+                                "Paragraph with **bold**, *italic*, `code`, ~~strike~~ and a\n"
+                                "[link](https://example.com) plus words that wrap across lines\n"
+                                "at the console width boundary.\n"
+                                "\n"
+                                "## Heading Two\n"
+                                "\n"
+                                "- alpha one\n"
+                                "- beta two\n"
+                                "  - nested one\n"
+                                "- gamma three\n"
+                                "\n"
+                                "3. first item\n"
+                                "3. second item\n"
+                                "\n"
+                                "> quoted line one\n"
+                                "> quoted line two\n"
+                                "\n"
+                                "```python\n"
+                                "def f(x):\n"
+                                "    return x * 2\n"
+                                "```\n";
+        mc.print(rich::markdown::markdown(doc, false));
+        std::cout << mc.export_text();
+        return 0;
+    } else if (test_name == "progress_bar_basic") {
+        rich::ConsoleOptions p_opts{.width = 60, .record = true, .legacy_windows = false};
+        rich::Console pc(oss, p_opts);
+        for (int done : {0, 25, 50, 75, 100}) {
+            rich::progress::ProgressBar bar(100, 30);
+            bar.update(static_cast<size_t>(done));
+            pc.print(rich::AnyRenderable(bar));
+        }
+        std::cout << pc.export_text();
         return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";

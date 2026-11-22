@@ -136,6 +136,8 @@ inline std::string py_repr_style(const Style& st) {
     push_flag("italic", st.italic, (st.explicit_bits & 0x04) != 0);
     push_flag("underline", st.underline, (st.explicit_bits & 0x08) != 0);
     push_flag("reverse", st.reverse, (st.explicit_bits & 0x10) != 0);
+    push_flag("strike", st.strike, (st.explicit_bits & 0x20) != 0);
+    if (!st.link.empty()) fields.push_back("link='" + st.link + "'");
     std::string out = "Style(";
     for (size_t i = 0; i < fields.size(); ++i) {
         if (i) out += ", ";
@@ -151,7 +153,7 @@ inline std::string py_repr_style(const Style& st) {
 inline bool is_none_style(const Style& st) {
     return st.color.type == Color::Type::None && st.color.ansi == 200 &&
            !st.bold && !st.dim && !st.italic && !st.underline && !st.reverse &&
-           st.bg_color.type == Color::Type::None;
+           !st.strike && st.bg_color.type == Color::Type::None && st.link.empty();
 }
 
 inline std::string py_repr_segment(const Segment& s) {

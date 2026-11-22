@@ -5,7 +5,8 @@ set(RICH_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/rich-cpp)
 include_directories(${RICH_SRC})
 
 # Core library
-add_library(rich_core SHARED src/rich-cpp/core/rich_core.cpp)
+add_library(rich_core SHARED src/rich-cpp/core/rich_core.cpp
+                            src/rich-cpp/traceback/traceback.cpp)
 target_include_directories(rich_core PUBLIC
     $<BUILD_INTERFACE:${RICH_SRC}/core>
     $<INSTALL_INTERFACE:include/rich>)
@@ -39,7 +40,7 @@ install(TARGETS rich_core panel
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-install(DIRECTORY src/rich-cpp/core/ src/rich-cpp/panel/
+install(DIRECTORY src/rich-cpp/core/ src/rich-cpp/panel/ src/rich-cpp/traceback/
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/rich
         FILES_MATCHING PATTERN "*.h")
 

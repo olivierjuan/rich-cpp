@@ -38,6 +38,8 @@ public:
         out.push_back({filled_bar, rich::Style{.bold = true, .color = rich::Color::from_ansi(32)}}); // Green
         out.push_back({empty_bar, rich::Style{.dim = true, .color = rich::Color::from_ansi(90)}});   // Dim gray
         out.push_back({" " + pct_str, rich::Style{.bold = true, .color = rich::Color::from_ansi(96)}}); // Cyan
+        // Renderables carry their own trailing newline (cf. StyledText/Panel).
+        out.push_back({"\n", rich::detail::kNoneStyle()});
         return out;
     }
 

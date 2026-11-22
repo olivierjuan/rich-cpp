@@ -44,15 +44,37 @@ struct RICH_EXPORT Style {
     bool italic{false};
     bool underline{false};
     bool reverse{false};
+    bool strike{false};
     Color color;
     Color bg_color;
     // Python Style tracks which boolean attributes were *explicitly set* in
     // the constructor; repr emits them even when false (e.g.
     // Style(color='green', bold=False) -> "bold=False"). Bit 0=bold,
-    // 1=dim, 2=italic, 3=underline, 4=reverse.
+    // 1=dim, 2=italic, 3=underline, 4=reverse, 5=strike.
     uint8_t explicit_bits{0};
+    // Hyperlink target (Python Style.link); OSC 8 on terminal render.
+    std::string link;
+    uint32_t link_id{0};
 
-    constexpr bool operator==(const Style&) const = default;
+    constexpr bool operator==(const Style& o) const {
+        return bold == o.bold && dim == o.dim && italic == o.italic &&
+               underline == o.underline && reverse == o.reverse &&
+               strike == o.strike && color == o.color && bg_color == o.bg_color &&
+               explicit_bits == o.explicit_bits && link == o.link;
+    }
+
+    // Python bool(Style): false only for the null style (no attributes,
+    // colors, explicit bits, or link).
+    bool truthy() const {
+        return explicit_bits != 0 || bold || dim || italic || underline ||
+               reverse || strike || color.type != Color::Type::None ||
+               bg_color.type != Color::Type::None || !link.empty();
+    }
+
+    // Python Style.__add__ / _add: right operand wins for the attribute bits
+    // it explicitly set; colors/bg/link take `right or left`; explicit bits
+    // union. A null (kNoneStyle) operand is the identity.
+    Style operator+(const Style& o) const;
 };
 
 struct RICH_EXPORT Segment {
@@ -158,6 +180,7 @@ public:
 
     size_t width() const noexcept { return options_.width; }
     size_t height() const noexcept { return options_.height; }
+    bool legacy_windows() const noexcept { return options_.legacy_windows; }
     std::string export_text() const;
     // Terminal snapshot as SVG (Python Rich Console.export_svg parity).
     // Requires record=true. title: window caption; unique_id: deterministic
@@ -171,6 +194,15 @@ public:
     std::string export_html(bool inline_styles = false) const;
     // Segment-level access to the recorded buffer (styles preserved).
     const std::vector<Segment>& recorded_segments() const noexcept { return record_segments_; }
+    // Python Console.render_lines parity: render each renderable at `opt`,
+    // apply `style` to every segment when truthy (Segment.apply_style:
+    // `style + segment.style`, None-style segments take the base), split at
+    // '\n', crop lines longer than opt.width at cell boundaries and pad
+    // shorter lines with a pad segment (style = `style`, or the None-style
+    // sentinel when `style` is null).
+    std::vector<std::vector<Segment>> render_lines(
+        const std::vector<AnyRenderable>& renderables, const Options& opt,
+        const Style* style, bool pad = true) const;
 
 private:
     std::ostream& os_;

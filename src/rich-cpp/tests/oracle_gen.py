@@ -192,6 +192,78 @@ def generate_python_oracle(test_name: str) -> str:
                       '"e": 1e2, "wide": "' + "y" * 90 + '"}'))
         c2.print(JSON('{"u": "\\u6f22\\u5b57", "n": NaN, "inf": Infinity}'))
         return c2.export_text()
+    elif test_name == "syntax_basic":
+        from rich.syntax import Syntax
+        py_code = ("def fib(n):\n"
+                   '    """Return the nth Fibonacci number."""\n'
+                   "    if n <= 1:\n"
+                   "        return n\n"
+                   "    a, b = 0, 1\n"
+                   "    for _ in range(n - 1):\n"
+                   "        a, b = b, a + b\n"
+                   "    return a + b\n")
+        cpp_code = ("int main() {\n"
+                    "    // entry point\n"
+                    "    int total = 0;\n"
+                    "    for (int i = 1; i <= 10; ++i) {\n"
+                    "        total += i;\n"
+                    "    }\n"
+                    "    return total;\n"
+                    "}\n")
+        c2 = Console(file=sink, width=40, record=True, legacy_windows=False)
+        c2.print(Syntax(py_code, "python"))
+        c2.print(Syntax(cpp_code, "cpp", line_numbers=True, start_line=10,
+                        highlight_lines={12}))
+        c2.print(Syntax("plain text\nwith punctuation, and words like 42\n", "text"))
+        c2.print(Syntax(py_code, "python", line_numbers=True, word_wrap=True))
+        return c2.export_text()
+    elif test_name == "markdown_basic":
+        from rich.markdown import Markdown
+        doc = (
+            "# Heading One\n"
+            "\n"
+            "Paragraph with **bold**, *italic*, `code`, ~~strike~~ and a\n"
+            "[link](https://example.com) plus words that wrap across lines\n"
+            "at the console width boundary.\n"
+            "\n"
+            "## Heading Two\n"
+            "\n"
+            "- alpha one\n"
+            "- beta two\n"
+            "  - nested one\n"
+            "- gamma three\n"
+            "\n"
+            "3. first item\n"
+            "3. second item\n"
+            "\n"
+            "> quoted line one\n"
+            "> quoted line two\n"
+            "\n"
+            "```python\n"
+            "def f(x):\n"
+            "    return x * 2\n"
+            "```\n"
+        )
+        c2 = Console(file=sink, width=60, record=True, legacy_windows=False)
+        c2.print(Markdown(doc, hyperlinks=False))
+        return c2.export_text()
+    elif test_name == "progress_bar_basic":
+        # Reference rendering of rich::progress::ProgressBar (green fill /
+        # dim empty / cyan percentage) via rich markup, at several fill
+        # levels including the 0% and 100% edges.
+        def bar(completed, total=100, width=30):
+            filled = completed * width // total
+            empty = width - filled
+            pct = str(completed * 100 // total) + "%"
+            if len(pct) < 4:
+                pct = " " * (4 - len(pct)) + pct
+            return ("[bold green]" + "█" * filled + "[/bold green]"
+                    + "[dim bright_black]" + "░" * empty + "[/dim bright_black]"
+                    + "[bold bright_cyan] " + pct + "[/bold bright_cyan]")
+        c2 = Console(file=sink, width=60, record=True, legacy_windows=False)
+        for done in (0, 25, 50, 75, 100):
+            c2.print(bar(done))
+        return c2.export_text()
     return c.export_text()
 
 def main():

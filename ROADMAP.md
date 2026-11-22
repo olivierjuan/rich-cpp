@@ -19,7 +19,7 @@ graph TD
 | **Tier 1** | Core Polish & Text Foundations (Boxes, Wrapping, Terminal Width, NO_COLOR) | 0 (Pure C++20) | ✅ **Completed & Validated (16/16 Oracle)** |
 | **Tier 2** | Advanced Visual Layout (Tree, Align, Constrain, Layout) | 0 (Pure C++20) | ✅ **Completed & Validated (16/16 Oracle)** |
 | **Tier 3** | Dynamic & Live Displays (Progress Bars, Spinners) | 0 (`std::jthread` / VT escapes) | ✅ **Completed & Validated (20/20 Oracle)** |
-| **Tier 4** | Heavy Ecosystem Modules (Markdown, Highlighting, Stacktrace) | Optional 3rd-party (`md4c`, `cpptrace`) | 🔶 **In Progress — SVG Export + Emoji done; Pretty layout-parity (25/25 Oracle)** |
+| **Tier 4** | Heavy Ecosystem Modules (JSON, Syntax, Markdown, HTML/SVG Export, Traceback) | 0 (Pure C++20 + Win32/DbgHelp) | ✅ **Completed & Validated (32/32 Oracle)** |
 
 ---
 
@@ -98,8 +98,9 @@ graph TD
 
 ### 3.1 Smooth Progress Bar (`rich::progress`)
 - [x] **Block Progress Bar (`src/rich-cpp/core/ProgressBar.h`)**:
-  - Fraction block characters: `█` (filled) and `░` (empty).
-  - Percentage indicator with aligned padding.
+  - Fraction block characters: `█` (filled, bold green) and `░` (empty, dim).
+  - Percentage indicator with aligned padding (bold cyan).
+  - Oracle test: `progress_bar_basic` (0/25/50/75/100%, byte-exact).
 - [x] **Multi-Column Progress Tracker (`src/rich-cpp/core/ProgressTracker.h`)**:
   - Half-cell bar rendering (`━`×N + optional `╸`) matching Python Rich's `ProgressBar` exactly.
   - Rolling-window speed estimation (30 s window, deque of `(timestamp, delta)` samples).
@@ -127,9 +128,9 @@ graph TD
 
 ---
 
-## 🔶 Tier 4: Heavy Ecosystem Modules *(Optional / Deferrable)*
-*Goal: Provide specialized document rendering or introspection only if strictly needed.*
-*Note: Stop before this tier if zero-dependency and lightweight compilation are priorities.*
+## ✅ Tier 4: Heavy Ecosystem Modules *(Completed - Zero Dependencies)*
+*Goal: Provide specialized document rendering or introspection.*
+*All modules implemented with zero third-party C++ dependencies; `md4c`/`cpptrace` were never required.*
 
 ### 4.5 SVG Export (`rich::Console::export_svg`) *(Completed - Zero Dependencies)*
 - [x] **Terminal snapshot as SVG (`src/rich-cpp/core/Svg.h` + `rich_core.cpp`)**:
@@ -152,16 +153,46 @@ graph TD
 ### 4.7 Pretty Print (`rich::pretty::pretty`) *(Layout-Parity Subset)*
 - [x] **Repr tree + expansion engine (`src/rich-cpp/core/Pretty.h`)**: port of Python `rich.pretty` `Node`/`_Line` — containers stay on one line while their token stream fits the console width, else expand (open brace line, children indented +4 with `,` separators, close brace line). Nested containers re-check independently.
 - [x] **Portable types**: sequences (`vector`/`list`/`deque`/`array`), maps (`map`/`unordered_map`), `pair`/`tuple` (incl. 1-tuple trailing comma), `optional` (`None`), scalars with Python reprs (`True`/`False`/`None`, `str(float)`, quoted strings).
-- [x] Oracle tests: `pretty_list`, `pretty_dict` (inline + expanded + nested), `pretty_scalars`.
+- [x] Oracle tests: `pretty_list`, `pretty_dict` (inline + expanded + nested), `pretty_scalars`, `pretty_options`.
 - [ ] Not portable / pending: struct introspection, `ReprHighlighter` syntax coloring, `max_length`/`max_string`/`max_depth` truncation.
 
-| Module | Python Rich Equivalent | Proposed C++ Strategy | Dependency Impact | Recommendation |
+### 4.8 JSON Viewer (`rich::json::json`) *(Completed - Zero Dependencies)*
+- [x] **Recursive-descent parser (`src/rich-cpp/json/Json.h`)**: objects, arrays, strings (UTF-8 + `\uXXXX` escapes, surrogate pairs), numbers, booleans, null — no third-party libraries.
+- [x] **Syntax-colored tree rendering** matching Python `rich.json.Json` layout (indentation, colors per JSON token kind).
+- [x] Oracle test: `json_basic` — byte-exact vs Python.
+
+### 4.9 Syntax Highlighting (`rich::highlight::Syntax`) *(Completed - Zero Dependencies)*
+- [x] **Monokai theme + regex lexers** (`src/rich-cpp/highlight/Syntax.h`): `python`, `cpp`, `json`, `text` (plain) — no Tree-sitter, no grammar binaries.
+- [x] `SyntaxOptions.padding` (line-number gutter + padding), line numbers optional.
+- [x] Oracle test: `syntax_basic` — byte-exact vs Python `rich.syntax.Syntax` (monokai).
+
+### 4.10 Markdown (`rich::markdown::markdown`) *(Completed - Zero Dependencies)*
+- [x] **Zero-dep CommonMark subset** (`src/rich-cpp/markdown/Markdown.h`, ~1800 lines): headings (H1–H6, `#`-style), paragraphs, bullet/ordered lists (nested), block quotes, fenced code blocks (CommonMark indent-strip semantics), pipe tables, inline **bold**/*italic*/~~strike~~/`code`/links (OSC 8 or `text (url)`)/`<kbd>`.
+- [x] Theme table port (`markdown.code`, `h1`–`h4`, `link_url`, `kbd`, ...) as SGR styles; memory-safe element stack (flatten emit-then-recurse).
+- [x] **299 → 0 diff lines** across 12 probe documents (widths 80/40) vs Python ground truth.
+- [x] Oracle test: `markdown_basic` — byte-exact vs Python `rich.markdown.Markdown`.
+
+### 4.11 HTML Export (`rich::Console::export_html`) *(Completed - Zero Dependencies)*
+- [x] **HTML terminal snapshot** (`src/rich-cpp/core/Html.h` + `rich_core.cpp`): `DEFAULT_TERMINAL_THEME` palette, class-based CSS rules (first-appearance order), truecolor blending for dim/reverse, per-line spans.
+- [x] Oracle test: `export_html` — byte-exact vs Python.
+
+### 4.12 Traceback (`rich::traceback`) *(Completed - Win32/DbgHelp, no third-party deps)*
+- [x] **Stack capture** (`src/rich-cpp/traceback/Traceback.h` / `traceback.cpp`): `capture_stack(max_frames, skip)` via Win32 `CaptureStackBackTrace`; non-Windows returns an empty list.
+- [x] **Module resolution** via psapi `K32EnumProcessModules` + `K32GetModuleBaseNameA`/`K32GetModuleFileNameExA` (DbgHelp's `SymGetModuleInfo64`/`SymEnumerateModules64` do not work on the local process).
+- [x] **Symbol names** via DbgHelp `SymFromAddr` with local PDB search path; each module must be registered with an explicit `SymLoadModule64` first (DbgHelp does not auto-register live-process modules).
+- [x] **`print_current_trace()`**: `Traceback (most recent call last):` header (bold) + `#N  module!symbol (+0xoffset) @ 0xaddress` frames.
+- [x] Graceful degradation without symbols (module+offset only); verified by smoke run (`#0 probe_trace.exe!m (+0x1d4b) @ 0x7ff7...` etc.).
+- [ ] No byte-exact oracle: addresses/modules are nondeterministic per machine.
+
+| Module | Python Rich Equivalent | Implemented Strategy | Dependency Impact | Recommendation |
 | :--- | :--- | :--- | :--- | :--- |
-| **Markdown** | `rich.markdown` | Integrate `md4c` CommonMark parser | Lightweight C library | **Optional**: Integrate as separate CMake target `rich::markdown` |
-| **Syntax Highlighting** | `rich.syntax` | Regex lexer or Tree-Sitter | Heavy grammar binaries | **Defer**: Provide pluggable `Highlighter` interface instead |
-| **Tracebacks** | `rich.traceback` | `cpptrace` or C++23 `<stacktrace>` | Platform symbol resolution | **Nice-to-have**: Standalone CMake target `rich::traceback` |
+| **Markdown** | `rich.markdown` | Zero-dep CommonMark subset (hand-written) | **0 deps** | ✅ **Done** (see 4.10) |
+| **Syntax Highlighting** | `rich.syntax` | Monokai theme + regex lexers (python/cpp/json/text) | **0 deps** | ✅ **Done** (see 4.9) |
+| **Tracebacks** | `rich.traceback` | Win32 `CaptureStackBackTrace` + psapi modules + DbgHelp symbols | **0 deps** (SDK headers) | ✅ **Done** (see 4.12) |
+| **JSON Viewer** | `rich.json` | Recursive-descent parser + colored tree | **0 deps** | ✅ **Done** (see 4.8) |
+| **HTML Export** | `Console.save_html` | Pure C++ HTML/CSS templating | **0 deps** | ✅ **Done** (see 4.11) |
 | **SVG Export** | `Console.save_svg` | Pure C++ SVG string templating | **0 deps** | ✅ **Done** (see 4.5) |
-| **Full Unicode Tables** | `rich.cells` | Generate static C++ table or `utf8proc` | Minimal table or 1 C dep | **Only if needed**: For CJK/emoji-heavy tools |
+| **Full Unicode Tables** | `rich.cells` | Static East-Asian width tables | **0 deps** | ✅ **Done** (see Tier 1.2) |
 
 ---
 

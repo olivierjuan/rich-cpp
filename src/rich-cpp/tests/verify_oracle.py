@@ -32,6 +32,9 @@ TEST_CASES = [
     "pretty_scalars",
     "pretty_options",
     "json_basic",
+    "syntax_basic",
+    "markdown_basic",
+    "progress_bar_basic",
 ]
 
 import os

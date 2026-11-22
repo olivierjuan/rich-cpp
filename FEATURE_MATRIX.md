@@ -13,7 +13,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | Fluent / Pipe syntax | N/A (Python decorators) | `operator\|` | ✅ Done | ✅ Yes | `content \| pad(1) \| panel({...})` |
 | **Markup & Text** | Inline markup `[bold red]...[/]` | `rich.markup` | `rich::parse_markup`, `StyledText` | ✅ Done | ✅ Yes | Tag nesting, `[/]` closing, bracket escaping `[[`, `on <color>` backgrounds |
 | | Text formatting & wrapping | `rich.text` | `rich::text::Text` | ✅ Done | ✅ Yes | Soft word wrapping matching Python Rich output |
-| | Unicode Cell Width Calculation | `rich.cells` | `cell_width` / `visual_width` | 🟡 Partial | ✅ Yes | Multi-byte UTF-8 width (1 vs 2 cols); full East Asian Width tables pending |
+| | Unicode Cell Width Calculation | `rich.cells` | `cell_width` / `visual_width` | 🟡 Partial | ✅ Yes | Multi-byte UTF-8 width (1 vs 2 cols) + East Asian width tables; oracle `text_wrap_cjk` |
 | | Emoji codes `:smile:` | `rich.emoji` | `rich::emoji_replace` | ✅ Done | ✅ Yes | Python-parity `:name:` table (3608 codes, generated `EmojiTable.h`), `-emoji`/`-text` variants, unknown codes verbatim |
 | **Layout & Containers** | `Panel` | `rich.panel` | `rich::panel::Panel` | ✅ Done | ✅ Yes | Centered titles, borders, multiline support, custom box styles |
 | | `Padding` | `rich.padding` | `rich::decorator::Padding` | ✅ Done | ✅ Yes | Top/bottom and left/right padding decorator |
@@ -25,23 +25,23 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | `Layout` (Split grid engine) | `rich.layout` | `rich::layout::Layout` | ✅ Done | ✅ Yes | split_row/split_column with fixed size + ratio distribution, exact byte match |
 | | `Align` (Left/Center/Right) | `rich.align` | `rich::align::Align`, `align(Justify)` | ✅ Done | ✅ Yes | Full-width padding parity (`left`, `center`, `right`), exact byte match |
 | | `Constrain` (Max width clamp) | `rich.constrain` | `rich::constrain::Constrain`, `constrain(N)` | ✅ Done | ✅ Yes | Clamps child options width, exact byte match |
-| **Dynamic & Live** | `Progress` bar | `rich.progress` | `rich::progress::ProgressBar` | ✅ Done | ❌ No | Block characters (`█`, `░`) and percentage indicator; no dedicated oracle case |
+| **Dynamic & Live** | `Progress` bar | `rich.progress` | `rich::progress::ProgressBar` | ✅ Done | ✅ Yes | Block characters (`█`, `░`) and percentage indicator; oracle `progress_bar_basic` |
 | | `ProgressTracker` (multi-task, speed, ETA) | `rich.progress` | `rich::progress::ProgressTracker` | ✅ Done | ✅ Yes | Half-cell bar, rolling-window speed, ETA; oracle `progress_tracker`, `progress_speed` |
 | | `track()` range adapter | `rich.progress` | `rich::progress::track(tracker, desc)(range)` | ✅ Done | ✅ Yes | Ticks task per iteration; exception-safe; demo in `quick.cpp` §9 |
 | | `Live` (dynamic terminal refresh) | `rich.live` | `rich::live::Live` | ✅ Done | ✅ Yes | In-place VT redraw, non-TTY degradation, transient clear; oracle `live_static` |
 | | `Status` spinner | `rich.status` | `rich::status::Status` | ✅ Done | ✅ Yes | Braille frames, 80 ms interval, deterministic teardown; oracle `status_static` |
-| **Data & Inspection** | `Pretty` print (data structures) | `rich.pretty` | `rich::pretty::pretty` | 🟡 Partial | ✅ Yes | Layout parity (Node/expand port) for sequences, maps, pairs/tuples, optionals, scalars; structs & `ReprHighlighter` colors not portable/pending |
-| | `Syntax` highlighting | `rich.syntax` | `rich::highlight::Highlighter` | 🟡 Scaffolded | ❌ No | Interface defined; Tree-sitter or regex highlighter pending |
-| | `Markdown` rendering | `rich.markdown` | `rich::markdown::parse` | 🟡 Scaffolded | ❌ No | Header stub in place; md4c integration pending |
-| | `Traceback` (pretty stack traces) | `rich.traceback` | `rich::traceback::print_current_trace` | 🟡 Scaffolded | ❌ No | Header stub in place; `cpptrace` integration pending |
-| | `JSON` viewer | `rich.json` | N/A | ❌ Not Started | ❌ No | Formatted syntax-colored JSON trees |
+| | `Pretty` print (data structures) | `rich.pretty` | `rich::pretty::pretty` | ✅ Done | ✅ Yes | Node/expand layout parity for sequences, maps, pairs/tuples, optionals, scalars; oracles `pretty_list`, `pretty_dict`, `pretty_scalars`, `pretty_options` |
+| | `Syntax` highlighting | `rich.syntax` | `rich::highlight::Syntax` | ✅ Done | ✅ Yes | Monokai theme; python/cpp/json/text lexers (regex); `SyntaxOptions.padding`; oracle `syntax_basic` |
+| | `Markdown` rendering | `rich.markdown` | `rich::markdown::markdown(doc, hyperlinks)` | ✅ Done | ✅ Yes | Zero-dep CommonMark subset: headings, paragraphs, bullets/ordered lists (nesting), quotes, fenced code, tables, inline bold/italic/code/strike/links/kbd; theme table; oracles `markdown_basic` (byte-exact vs Python) |
+| | `Traceback` (pretty stack traces) | `rich.traceback` | `rich::traceback::print_current_trace` / `capture_stack` | ✅ Done | ❌ No | Win32 `CaptureStackBackTrace` + psapi module table + DbgHelp symbol names (local PDBs, explicit `SymLoadModule64`); graceful module+offset fallback without symbols; no byte-exact oracle (addresses nondeterministic) |
+| | `JSON` viewer | `rich.json` | `rich::json::json` | ✅ Done | ✅ Yes | Recursive-descent parser + syntax-colored tree rendering; oracle `json_basic` |
 | **System & Platform** | Windows VT / UTF-8 auto-init | `rich._windows` | `rich::platform::enable_vt` | ✅ Done | ✅ Yes | Automatic `CP_UTF8` and `ENABLE_VIRTUAL_TERMINAL_PROCESSING` |
 | | Auto terminal size detection | `rich.console` | `detect_terminal_width` | ✅ Done | ❌ No | Windows CSBI (`GetConsoleScreenBufferInfo`) + POSIX `ioctl` |
 | | `NO_COLOR` standard | `rich.console` | `no_color_enabled` | ✅ Done | ❌ No | Respects `NO_COLOR` environment variable |
 | | Record / Export (Text) | `rich.console` | `Console::export_text` | ✅ Done | ✅ Yes | Records terminal output to buffer |
 | | Export to SVG | `rich.console` | `Console::export_svg` | ✅ Done | ✅ Yes | SVG terminal snapshot (`CONSOLE_SVG_FORMAT` port, `unique_id` from segment-repr adler32) |
-| | Export to HTML | `rich.console` | N/A | ❌ Not Started | ❌ No | Generates HTML snapshots of terminal output |
-| | Automated Oracle test suite | Tests | `src/rich-cpp/tests/verify_oracle.py` | ✅ Done | ✅ Yes | 25/25 exact byte-level parity checks with Python Rich |
+| | Export to HTML | `rich.console` | `Console::export_html` | ✅ Done | ✅ Yes | HTML terminal snapshot (`DEFAULT_TERMINAL_THEME`, class-based CSS); oracle `export_html` |
+| | Automated Oracle test suite | Tests | `src/rich-cpp/tests/verify_oracle.py` | ✅ Done | ✅ Yes | 32/32 exact byte-level parity checks with Python Rich |
 
 ---
 

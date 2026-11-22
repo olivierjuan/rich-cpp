@@ -20,6 +20,29 @@ std::string emoji_replace(std::string_view text) { return emoji::replace(text); 
 
 namespace rich {
 
+// Python Style._add: right operand wins for the boolean attributes it
+// explicitly set; colors/bg_color/link take "right or left"; explicit-bit
+// mask is the union. kNoneStyle (Python's null style) is the identity.
+Style Style::operator+(const Style& o) const {
+    if (svg::is_none_style(o)) return *this;
+    if (svg::is_none_style(*this)) return o;
+    Style r = *this;
+    r.explicit_bits = static_cast<uint8_t>(explicit_bits | o.explicit_bits);
+    r.bold = (o.explicit_bits & 0x01) != 0 ? o.bold : r.bold;
+    r.dim = (o.explicit_bits & 0x02) != 0 ? o.dim : r.dim;
+    r.italic = (o.explicit_bits & 0x04) != 0 ? o.italic : r.italic;
+    r.underline = (o.explicit_bits & 0x08) != 0 ? o.underline : r.underline;
+    r.reverse = (o.explicit_bits & 0x10) != 0 ? o.reverse : r.reverse;
+    r.strike = (o.explicit_bits & 0x20) != 0 ? o.strike : r.strike;
+    if (o.color.type != Color::Type::None) r.color = o.color;
+    if (o.bg_color.type != Color::Type::None) r.bg_color = o.bg_color;
+    if (!o.link.empty()) {
+        r.link = o.link;
+        r.link_id = o.link_id;
+    }
+    return r;
+}
+
 namespace {
 void init_terminal() {
 #ifdef _WIN32
@@ -82,14 +105,17 @@ size_t detect_terminal_height() {
     return 25;
 }
 
+std::string link_osc(const Style& s);
+
 std::string style_to_ansi(const Style& s) {
-    if (no_color_enabled()) return "";
+    if (no_color_enabled()) return s.link.empty() ? "" : link_osc(s);
 
     std::string out;
     if (s.bold) out += "\x1b[1m";
     if (s.dim) out += "\x1b[2m";
     if (s.italic) out += "\x1b[3m";
     if (s.underline) out += "\x1b[4m";
+    if (s.strike) out += "\x1b[9m";
     if (s.reverse) out += "\x1b[7m";
 
     if (s.color.type == Color::Type::Standard) {
@@ -108,10 +134,20 @@ std::string style_to_ansi(const Style& s) {
     return out;
 }
 
+// Python Style.render link wrap: OSC 8 with a per-instance id.
+inline std::string link_osc_begin(const Style& s) {
+    return "\x1b]8;id=" + std::to_string(s.link_id) + ";" + s.link + "\x1b\\";
+}
+inline const char* link_osc_end() { return "\x1b]8;;\x1b\\"; }
+std::string link_osc(const Style& s) {
+    return link_osc_begin(s) + link_osc_end();
+}
+
 bool has_style(const Style& s) {
     if (no_color_enabled()) return false;
-    return s.bold || s.dim || s.italic || s.underline || s.reverse ||
-           s.color.type != Color::Type::None || s.bg_color.type != Color::Type::None;
+    return s.bold || s.dim || s.italic || s.underline || s.reverse || s.strike ||
+           s.color.type != Color::Type::None || s.bg_color.type != Color::Type::None ||
+           !s.link.empty();
 }
 
 std::string repeat_utf8_core(std::string_view glyph, size_t count) {
@@ -211,9 +247,12 @@ void Console::print(const AnyRenderable& ar) {
 
     for (const auto& s : out) {
         bool styled = has_style(s.style);
+        bool linked = !s.style.link.empty() && !options_.legacy_windows;
+        if (linked) os_ << link_osc_begin(s.style);
         if (styled) os_ << style_to_ansi(s.style);
         os_ << s.text;
         if (styled) os_ << "\x1b[0m";
+        if (linked) os_ << link_osc_end();
 
         if (options_.record) {
             record_buffer_ += s.text;
@@ -229,6 +268,73 @@ void Console::print(std::string_view markup_text) {
 void Console::rule(std::string_view title) {
     size_t w = (options_.width > 0) ? options_.width : detect_terminal_width();
     print(AnyRenderable(Rule{std::string(title), w}));
+}
+
+// Python Segment.adjust_line_length: crop over-long lines at cell
+// boundaries, or pad short lines with a style-`style` segment.
+static std::vector<Segment> adjust_line_length(std::vector<Segment>&& line,
+                                               size_t length, const Style* style,
+                                               bool pad) {
+    size_t line_length = 0;
+    for (const auto& s : line) line_length += unicode::string_cell_len(s.text);
+    if (line_length < length) {
+        if (pad)
+            line.push_back({std::string(length - line_length, ' '),
+                            style ? *style : detail::kNoneStyle()});
+        return std::move(line);
+    }
+    if (line_length == length) return std::move(line);
+    std::vector<Segment> out;
+    size_t cur = 0;
+    for (auto& s : line) {
+        size_t sl = unicode::string_cell_len(s.text);
+        if (cur + sl < length) {
+            out.push_back(std::move(s));
+            cur += sl;
+        } else {
+            out.push_back({crop_cells(s.text, length - cur), s.style});
+            break;
+        }
+    }
+    return out;
+}
+
+std::vector<std::vector<Segment>> Console::render_lines(
+    const std::vector<AnyRenderable>& renderables, const Options& opt,
+    const Style* style, bool pad) const {
+    std::vector<Segment> segs;
+    for (const auto& r : renderables) {
+        auto s = r.render(*this, opt);
+        segs.insert(segs.end(), std::make_move_iterator(s.begin()),
+                    std::make_move_iterator(s.end()));
+    }
+    if (style && style->truthy())
+        for (auto& s : segs) s.style = *style + s.style;
+
+    std::vector<std::vector<Segment>> lines;
+    std::vector<Segment> line;
+    for (auto& s : segs) {
+        if (s.text.find('\n') == std::string::npos) {
+            line.push_back(std::move(s));
+            continue;
+        }
+        std::string_view sv(s.text);
+        size_t start = 0;
+        for (;;) {
+            size_t nl = sv.find('\n', start);
+            if (nl == std::string::npos) {
+                if (start < sv.size()) line.push_back({std::string(sv.substr(start)), s.style});
+                break;
+            }
+            if (nl > start) line.push_back({std::string(sv.substr(start, nl - start)), s.style});
+            lines.push_back(adjust_line_length(std::move(line), opt.width, style, pad));
+            line.clear();
+            start = nl + 1;
+        }
+    }
+    if (!line.empty())
+        lines.push_back(adjust_line_length(std::move(line), opt.width, style, pad));
+    return lines;
 }
 
 std::string Console::export_text() const {
