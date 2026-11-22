@@ -466,6 +466,39 @@ def generate_python_oracle(test_name: str) -> str:
         c2.print("[grey23]x[/][on dark_red]y[/]")
         c2.print("[deep_pink3]a[/][bright_red]b[/]")
         return "".join(parts) + sink2.getvalue()
+    elif test_name == "fileproxy_basic":
+        # rich.file_proxy.FileProxy + rich._null_file.NullFile: partial-line
+        # buffering, ANSI-decoded complete lines, raw-string flush.
+        from rich._null_file import NULL_FILE
+        from rich.file_proxy import FileProxy
+        c_fp = Console(file=io.StringIO(), width=60, record=True,
+                       legacy_windows=False)
+        proxy = FileProxy(c_fp, io.StringIO())
+        proxy.write("partial")
+        proxy.write(" line1\n")
+        proxy.write("\x1b[1mstyled\x1b[0m and \x1b[31mred\x1b[0m line2\n")
+        proxy.write("two\nlines\nin one write")
+        proxy.flush()
+        out = c_fp.export_text()
+        out += (
+            "NF:"
+            + str(NULL_FILE.fileno())
+            + ","
+            + str(NULL_FILE.write("x"))
+            + ","
+            + str(len(NULL_FILE.readlines()))
+            + ","
+            + str(NULL_FILE.tell())
+            + ","
+            + str(int(NULL_FILE.isatty()))
+            + ","
+            + str(int(NULL_FILE.writable()))
+            + ","
+            + str(int(NULL_FILE.readable()))
+            + ","
+            + str(NULL_FILE.seek(123))
+        )
+        return out
     return c.export_text()
 
 def main():

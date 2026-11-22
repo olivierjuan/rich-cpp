@@ -1394,28 +1394,34 @@ bool parse_color_word(std::string_view w, Color& out) {
     return false;
 }
 
+// Python Style.parse attribute handling (both the plain word and the
+// "not <word>" negation): set the attribute + its explicit bit.
+void apply_attr(const AttrWord& a, Style& st, bool value) {
+    st.explicit_bits = static_cast<uint16_t>(st.explicit_bits | a.explicit_bit);
+    switch (a.explicit_bit) {
+    case 0x0001: st.bold = value; break;
+    case 0x0002: st.dim = value; break;
+    case 0x0004: st.italic = value; break;
+    case 0x0008: st.underline = value; break;
+    case 0x0200: st.underline2 = value; break;
+    case 0x0040: st.blink = value; break;
+    case 0x0080: st.blink2 = value; break;
+    case 0x0010: st.reverse = value; break;
+    case 0x0100: st.conceal = value; break;
+    case 0x0020: st.strike = value; break;
+    case 0x0400: st.frame = value; break;
+    case 0x0800: st.encircle = value; break;
+    case 0x1000: st.overline = value; break;
+    }
+}
+
 // Applies one style word to `st` (Python: StyleStack.push(Style.parse(word))
 // semantics — the word is a full style definition; only the single-word
 // forms occur in practice via next_tag_word's "on X" merge).
 bool apply_tag(std::string_view tag, Style& st) {
     for (const auto& a : kAttrWords) {
         if (tag == a.name) {
-            st.explicit_bits = static_cast<uint16_t>(st.explicit_bits | a.explicit_bit);
-            switch (a.explicit_bit) {
-            case 0x0001: st.bold = true; break;
-            case 0x0002: st.dim = true; break;
-            case 0x0004: st.italic = true; break;
-            case 0x0008: st.underline = true; break;
-            case 0x0200: st.underline2 = true; break;
-            case 0x0040: st.blink = true; break;
-            case 0x0080: st.blink2 = true; break;
-            case 0x0010: st.reverse = true; break;
-            case 0x0100: st.conceal = true; break;
-            case 0x0020: st.strike = true; break;
-            case 0x0400: st.frame = true; break;
-            case 0x0800: st.encircle = true; break;
-            case 0x1000: st.overline = true; break;
-            }
+            apply_attr(a, st, true);
             return true;
         }
     }
@@ -1474,6 +1480,24 @@ Style parse_style_def(std::string_view definition) {
             if (!apply_tag("on " + std::string(color), out))
                 throw std::invalid_argument(std::string("style: unknown color '") +
                                             std::string(color) + "'");
+            continue;
+        }
+        if (word == "not") {
+            // Python: word = next(words, ""); STYLE_ATTRIBUTES.get(word)
+            // must be an attribute name (a color here is a syntax error).
+            std::string_view attr;
+            next_word(attr);
+            bool found = false;
+            for (const auto& a : kAttrWords) {
+                if (attr == a.name) {
+                    apply_attr(a, out, false);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                throw std::invalid_argument(std::string("style: expected style attribute after 'not', found '") +
+                                            std::string(attr) + "'");
             continue;
         }
         if (!apply_tag(word, out))

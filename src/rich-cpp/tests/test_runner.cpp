@@ -1,5 +1,6 @@
 #include <rich_core.h>
 #include <Palette.h>
+#include <FileProxy.h>
 #include <box.h>
 #include <Text.h>
 #include <panel/Panel.h>
@@ -670,6 +671,31 @@ int main(int argc, char* argv[]) {
         sc.print(std::string_view("[grey23]x[/][on dark_red]y[/]"));
         sc.print(std::string_view("[deep_pink3]a[/][bright_red]b[/]"));
         std::cout << out + s_oss.str();
+        return 0;
+    } else if (test_name == "fileproxy_basic") {
+        // rich.file_proxy.FileProxy + rich._null_file.NullFile: partial-line
+        // buffering, ANSI-decoded complete lines, raw-string flush.
+        rich::ConsoleOptions o{.width = 60, .record = true, .legacy_windows = false};
+        std::ostringstream dummy;
+        std::ostringstream wrapped;
+        rich::Console c(dummy, o);
+        rich::FileProxy proxy(c, wrapped);
+        proxy.write("partial");
+        proxy.write(" line1\n");
+        proxy.write("\x1b[1mstyled\x1b[0m and \x1b[31mred\x1b[0m line2\n");
+        proxy.write("two\nlines\nin one write");
+        proxy.flush();
+        std::string out = c.export_text();
+        const rich::NullFile nf;
+        out += "NF:" + std::to_string(nf.fileno()) + "," +
+               std::to_string(nf.write("x")) + "," +
+               std::to_string(nf.readlines().size()) + "," +
+               std::to_string(nf.tell()) + "," +
+               std::to_string(static_cast<int>(nf.isatty())) + "," +
+               std::to_string(static_cast<int>(nf.writable())) + "," +
+               std::to_string(static_cast<int>(nf.readable())) + "," +
+               std::to_string(nf.seek(123));
+        std::cout << out;
         return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";

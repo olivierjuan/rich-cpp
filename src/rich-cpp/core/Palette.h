@@ -11,7 +11,7 @@ struct ColorTriplet {
     uint8_t r{0}, g{0}, b{0};
 };
 
-class RICH_EXPORT Palette {
+class Palette {
 public:
     explicit Palette(std::vector<ColorTriplet> colors) : colors_(std::move(colors)) {}
 
