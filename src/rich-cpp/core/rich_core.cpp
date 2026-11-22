@@ -10,6 +10,9 @@
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
 #  define NOMINMAX
+#  ifndef ENABLE_ECHO_ON
+#    define ENABLE_ECHO_ON 0x0004L  // wincon.h, absent from some SDK copies
+#  endif
 #  include <windows.h>
 #  include <io.h>
 #else
@@ -569,6 +572,52 @@ void Console::log(std::initializer_list<std::string_view> objects, LogOptions op
         flat.push_back({std::string("\n"), Style{}});
     }
     emit_segments(flat);
+}
+
+std::string Console::input(std::string_view prompt, bool markup, bool password) {
+    init_terminal();
+    if (!prompt.empty()) {
+        // Python: self.print(prompt, markup=markup, emoji=emoji, end="") —
+        // recorded like any print, but without the trailing newline.
+        auto segs = markup ? parse_markup(prompt)
+                           : std::vector<Segment>{{std::string(prompt), Style{}}};
+        emit_segments(segs);
+        os_.flush();
+    }
+    std::string line;
+    auto read_line = [&line]() {
+        line.clear();
+        std::getline(std::cin, line);
+    };
+    if (password) {
+#ifdef _WIN32
+        HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
+        DWORD mode = 0;
+        const bool can_hide =
+            hIn != INVALID_HANDLE_VALUE && GetConsoleMode(hIn, &mode) &&
+            SetConsoleMode(hIn, mode & ~ENABLE_ECHO_ON);
+        if (can_hide) read_line();
+        if (can_hide) SetConsoleMode(hIn, mode);
+        if (!can_hide) read_line();
+#else
+        termios saved{};
+        const bool can_hide = tcgetattr(STDIN_FILENO, &saved) == 0;
+        if (can_hide) {
+            termios no_echo = saved;
+            no_echo.c_lflag &= static_cast<tcflag_t>(~ECHO);
+            tcsetattr(STDIN_FILENO, TCSANOW, &no_echo);
+            read_line();
+            tcsetattr(STDIN_FILENO, TCSANOW, &saved);
+        } else {
+            read_line();
+        }
+#endif
+    } else {
+        read_line();
+    }
+    // A '\r' from CRLF piped input is not part of the line.
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    return line;
 }
 
 void Console::print(std::string_view markup_text) {

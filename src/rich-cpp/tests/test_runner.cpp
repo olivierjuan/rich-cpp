@@ -547,6 +547,17 @@ int main(int argc, char* argv[]) {
         lc.rule("sep");
         std::cout << l_oss.str();
         return 0;
+    } else if (test_name == "input_smoke") {
+        // Interactive (not an oracle): piped stdin, prompt recorded, input
+        // NOT recorded (Python echoes via the terminal, not the console).
+        rich::ConsoleOptions io_opts{.width = 60, .record = true, .legacy_windows = false};
+        std::ostringstream io_oss;
+        rich::Console ic(io_oss, io_opts);
+        std::string name = ic.input(std::string_view("[bold]Name?[/] "));
+        std::string secret = ic.input(std::string_view("Password? "), true, true);
+        std::cout << "got:[" << name << "][" << secret << "]\n";
+        std::cout << ic.export_text();
+        return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
         return 1;

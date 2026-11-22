@@ -301,6 +301,12 @@ public:
     // overflow=fold at the available width; repeated times are blanked.
     void log(std::initializer_list<std::string_view> objects, LogOptions opts = {});
 
+    // Python Console.input: print the prompt (markup, no trailing newline —
+    // recorded like any print), then read one line from stdin (echo disabled
+    // while `password`). Returns the line without its trailing newline; an
+    // immediate EOF yields "" (Python raises EOFError).
+    std::string input(std::string_view prompt = "", bool markup = true, bool password = false);
+
     // Python Console.get_style: the top theme entry wins; a miss falls back
     // to parsing `name` as a style definition, then to `default` (resolved
     // the same way, recursively). Nothing matches -> std::runtime_error
