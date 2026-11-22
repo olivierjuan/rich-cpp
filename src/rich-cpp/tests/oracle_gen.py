@@ -436,6 +436,36 @@ def generate_python_oracle(test_name: str) -> str:
             + "|st:" + strip_control_codes("a\x07b\x08c") + "|"
         )
         return part1 + "SEP" + part2 + "SEP" + part3
+    elif test_name == "colorfile_basic":
+        # rich._palettes + rich.color (ANSI_COLOR_NAMES, rich 15.0.0 — no
+        # colorfile.py in this release): Palette.match() indices, then raw
+        # SGR proving the 235-entry name table ("grey23" -> 237) end-to-end.
+        from rich._palettes import (
+            EIGHT_BIT_PALETTE,
+            STANDARD_PALETTE,
+            WINDOWS_PALETTE,
+        )
+        parts = []
+        for r, g, b in [
+            (12, 34, 56),
+            (237, 1, 2),
+            (0, 0, 0),
+            (255, 255, 255),
+            (127, 127, 127),
+        ]:
+            parts.append(str(EIGHT_BIT_PALETTE.match((r, g, b))))
+        for r, g, b in [(200, 100, 50), (0, 0, 0), (255, 255, 255)]:
+            parts.append(str(STANDARD_PALETTE.match((r, g, b))))
+        for r, g, b in [(12, 34, 56), (237, 1, 2), (100, 200, 100)]:
+            parts.append(str(WINDOWS_PALETTE.match((r, g, b))))
+        parts.append("SEP")
+        sink2 = io.StringIO()
+        c2 = Console(file=sink2, width=60, height=25, force_terminal=True,
+                     color_system="truecolor", no_color=False,
+                     legacy_windows=False)
+        c2.print("[grey23]x[/][on dark_red]y[/]")
+        c2.print("[deep_pink3]a[/][bright_red]b[/]")
+        return "".join(parts) + sink2.getvalue()
     return c.export_text()
 
 def main():

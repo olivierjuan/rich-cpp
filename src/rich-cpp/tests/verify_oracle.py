@@ -47,6 +47,7 @@ TEST_CASES = [
     "capture_basic",
     "screen_basic",
     "control_basic",
+    "colorfile_basic",
 ]
 
 import os

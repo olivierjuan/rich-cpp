@@ -1,4 +1,5 @@
 #include <rich_core.h>
+#include <Palette.h>
 #include <box.h>
 #include <Text.h>
 #include <panel/Panel.h>
@@ -638,6 +639,37 @@ int main(int argc, char* argv[]) {
         out += "SEPesc:" + rich::escape_control_codes(std::string("\a\b\v\f\r")) +
                "|st:" + rich::strip_control_codes(std::string("a\ab\b\fc")) + "|";
         std::cout << out;
+        return 0;
+    } else if (test_name == "colorfile_basic") {
+        // rich._palettes + ANSI_COLOR_NAMES: Palette.match() indices, then raw
+        // SGR proving the 235-entry name table end-to-end ("grey23" -> 237).
+        auto q = [](const rich::Palette& p, int r, int g, int b) {
+            return std::to_string(p.match(r, g, b));
+        };
+        std::string out;
+        const auto& eb = rich::eight_bit_palette();
+        const auto& st = rich::standard_palette();
+        const auto& wi = rich::windows_palette();
+        for (auto [r, g, b] : {std::tuple<int, int, int>{12, 34, 56}, {237, 1, 2},
+                               {0, 0, 0}, {255, 255, 255}, {127, 127, 127}})
+            out += q(eb, r, g, b);
+        for (auto [r, g, b] : {std::tuple<int, int, int>{200, 100, 50}, {0, 0, 0},
+                               {255, 255, 255}})
+            out += q(st, r, g, b);
+        for (auto [r, g, b] : {std::tuple<int, int, int>{12, 34, 56}, {237, 1, 2},
+                               {100, 200, 100}})
+            out += q(wi, r, g, b);
+        out += "SEP";
+        rich::ConsoleOptions s_opts{.width = 60, .height = 25, .record = false,
+                                    .legacy_windows = false,
+                                    .force_terminal = true,
+                                    .color_system = rich::ColorSystem::Truecolor,
+                                    .no_color = false};
+        std::ostringstream s_oss;
+        rich::Console sc(s_oss, s_opts);
+        sc.print(std::string_view("[grey23]x[/][on dark_red]y[/]"));
+        sc.print(std::string_view("[deep_pink3]a[/][bright_red]b[/]"));
+        std::cout << out + s_oss.str();
         return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
