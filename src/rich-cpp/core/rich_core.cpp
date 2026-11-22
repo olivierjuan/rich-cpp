@@ -403,21 +403,102 @@ void Console::emit_segments(const std::vector<Segment>& segs) {
     // to the active color system.
     const auto cs = active_color_system();
     const bool strip_color = cs.has_value() && no_color();
+    std::string out;
     for (const auto& s : segs) {
         const bool styled = cs.has_value() && has_style(s.style, *cs, strip_color);
         const bool linked =
             cs.has_value() && !s.style.link.empty() && !options_.legacy_windows;
-        if (linked) os_ << link_osc_begin(s.style);
-        if (styled) os_ << style_sgr(s.style, *cs, strip_color);
-        os_ << s.text;
-        if (styled) os_ << "\x1b[0m";
-        if (linked) os_ << link_osc_end();
+        if (linked) out += link_osc_begin(s.style);
+        if (styled) out += style_sgr(s.style, *cs, strip_color);
+        out += s.text;
+        if (styled) out += "\x1b[0m";
+        if (linked) out += link_osc_end();
 
-        if (options_.record) {
+        if (options_.record && !capturing_) {
             record_buffer_ += s.text;
             record_segments_.push_back(s);
         }
     }
+    if (capturing_) {
+        // Python Capture: buffered output is neither written to the stream
+        // nor recorded.
+        capture_buffer_ += out;
+    } else {
+        os_ << out;
+        os_.flush();
+    }
+}
+
+bool Console::is_dumb_terminal() const {
+    // Python Console.is_dumb_terminal: exactly TERM == "dumb".
+    const char* term = std::getenv("TERM");
+    return term != nullptr && std::string_view(term) == "dumb";
+}
+
+void Console::begin_capture() {
+    capturing_ = true;
+    capture_buffer_.clear();
+}
+
+std::string Console::end_capture() {
+    capturing_ = false;
+    return std::exchange(capture_buffer_, std::string{});
+}
+
+Capture Console::capture() {
+    return Capture(*this);
+}
+
+Capture::~Capture() {
+    if (console_ && !ended_) {
+        result_ = console_->end_capture();
+        ended_ = true;
+    }
+}
+
+std::string Capture::get() const {
+    if (!ended_) {
+        // End the capture on first read (Python raises CaptureError before
+        // exit; C++ ends it here so get() is callable after the prints).
+        result_ = console_ ? console_->end_capture() : std::string{};
+        ended_ = true;
+    }
+    return result_;
+}
+
+ScreenContext::ScreenContext(Console& c, bool hide_cursor, std::string style)
+    : console_(&c), screen_{{}, std::move(style), false},
+      hide_cursor_(hide_cursor), changed_(false) {
+    // Python ScreenContext.__enter__ -> set_alt_screen(True) + show_cursor:
+    // the control codes go to the stream only for a real terminal.
+    if (console_->is_terminal() && !console_->legacy_windows() &&
+        !console_->is_dumb_terminal()) {
+        console_->write_raw("\x1b[?1049h");
+        changed_ = true;
+        if (hide_cursor_) console_->write_raw("\x1b[?25l");
+    }
+}
+
+ScreenContext::~ScreenContext() {
+    if (console_ && changed_) {
+        console_->write_raw("\x1b[?1049l");
+        if (hide_cursor_) console_->write_raw("\x1b[?25h");
+    }
+}
+
+void ScreenContext::update(std::vector<AnyRenderable> renderables,
+                           std::optional<std::string> style) {
+    if (console_) {
+        if (!renderables.empty()) screen_.renderables = std::move(renderables);
+        if (style.has_value()) screen_.style = std::move(*style);
+        // Python: self.console.print(self.screen, end="") — the Screen
+        // renderable carries no trailing newline, so a plain print matches.
+        console_->print(AnyRenderable(screen_));
+    }
+}
+
+ScreenContext Console::screen(bool hide_cursor, std::string style) {
+    return ScreenContext(*this, hide_cursor, std::move(style));
 }
 
 void Console::print(const AnyRenderable& ar) {
@@ -748,6 +829,14 @@ std::vector<std::vector<Segment>> Console::render_lines(
     }
     if (!line.empty())
         lines.push_back(adjust_line_length(std::move(line), opt.width, style, pad));
+    // Python render_lines: when options.height is set (C++: > 0), crop lines
+    // to the height, then pad with full-width blank segments in `style`.
+    if (opt.height > 0) {
+        if (lines.size() > opt.height) lines.resize(opt.height);
+        while (lines.size() < opt.height)
+            lines.push_back({Segment{std::string(opt.width, ' '),
+                                     style ? *style : detail::kNoneStyle()}});
+    }
     return lines;
 }
 

@@ -492,12 +492,12 @@ int main(int argc, char* argv[]) {
             o.line_no = line;
             return o;
         };
-        lc.log({std::string_view("hello world"), std::string_view("42")}, lo(330));
         lc.log({std::string_view("hello world"), std::string_view("42")}, lo(331));
-        lc.log({std::string_view("[red]styled[/] message")}, lo(332));
+        lc.log({std::string_view("hello world"), std::string_view("42")}, lo(332));
+        lc.log({std::string_view("[red]styled[/] message")}, lo(333));
         const std::string fifty(50, 'a');
-        lc.log({std::string_view(fifty)}, lo(333));
-        lc.log({}, lo(334));
+        lc.log({std::string_view(fifty)}, lo(334));
+        lc.log({}, lo(335));
         std::cout << lc.export_text();
         return 0;
     } else if (test_name == "log_sgr") {
@@ -557,6 +557,48 @@ int main(int argc, char* argv[]) {
         std::string secret = ic.input(std::string_view("Password? "), true, true);
         std::cout << "got:[" << name << "][" << secret << "]\n";
         std::cout << ic.export_text();
+        return 0;
+    } else if (test_name == "capture_basic") {
+        // Capture: prints inside the scope go to cap.get() — not to the
+        // stream, not to the record buffer. Second half proves the captured
+        // render carries SGR (force_terminal color system).
+        std::ostringstream c_oss;
+        rich::ConsoleOptions co{.width = 60, .record = true, .legacy_windows = false};
+        rich::Console cc(c_oss, co);
+        auto cap = cc.capture();
+        cc.print(std::string_view("[bold]captured[/]"));
+        cc.print(std::string_view("plain"));
+        std::string out = cap.get() + "file[" + c_oss.str() + "]rec[" + cc.export_text() + "]";
+        cc.print(std::string_view("after"));
+        out += cc.export_text();
+        std::ostringstream s_oss;
+        rich::ConsoleOptions fo{.width = 60, .height = 25,
+                                .legacy_windows = false,
+                                .force_terminal = true,
+                                .color_system = rich::ColorSystem::Truecolor,
+                                .no_color = false};
+        rich::Console cs(s_oss, fo);
+        auto cap4 = cs.capture();
+        cs.print(std::string_view("[bold]sgr[/]"));
+        out += "sgr[" + cap4.get() + "]";
+        std::cout << out;
+        return 0;
+    } else if (test_name == "screen_basic") {
+        // Screen: shaped to width x console height — short lines padded to
+        // width, tall content cropped, no trailing newline.
+        std::ostringstream s_oss;
+        rich::ConsoleOptions so{.width = 20, .height = 5, .record = true, .legacy_windows = false};
+        rich::Console sc(s_oss, so);
+        rich::Screen s1;
+        s1.renderables.push_back(rich::AnyRenderable(
+            rich::panel::Panel(rich::AnyRenderable(rich::Text{std::string("Hi"), {}}),
+                               {.width = 20})));
+        sc.print(rich::AnyRenderable(s1));
+        rich::Screen s2;
+        s2.renderables.push_back(rich::AnyRenderable(
+            rich::Text{std::string("l1\nl2\nl3\nl4\nl5\nl6\nl7"), {}}));
+        sc.print(rich::AnyRenderable(s2));
+        std::cout << sc.export_text();
         return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";

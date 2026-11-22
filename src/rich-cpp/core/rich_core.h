@@ -288,6 +288,10 @@ private:
     Console* console_;
 };
 
+// Forward declarations (defined below Console, used as its return types).
+class Capture;
+class ScreenContext;
+
 class RICH_EXPORT Console {
 public:
     explicit Console(std::ostream& os = std::cout, ConsoleOptions options = {}) noexcept
@@ -306,6 +310,16 @@ public:
     // while `password`). Returns the line without its trailing newline; an
     // immediate EOF yields "" (Python raises EOFError).
     std::string input(std::string_view prompt = "", bool markup = true, bool password = false);
+
+    // Python Console.capture: RAII scope diverting print/log output into an
+    // in-memory buffer (not written to the stream, not recorded); get()
+    // returns the rendered text once the scope exits.
+    Capture capture();
+    // Python Console.screen: RAII alternate-screen scope. Enters/leaves the
+    // alt screen (writes the control codes to the stream) when the console is
+    // a real terminal; `style` tints the padding, `hide_cursor` hides the
+    // cursor while active. update() re-renders the content.
+    ScreenContext screen(bool hide_cursor = true, std::string style = "");
 
     // Python Console.get_style: the top theme entry wins; a miss falls back
     // to parsing `name` as a style definition, then to `default` (resolved
@@ -332,6 +346,9 @@ public:
     // Python Console.is_terminal: force_terminal wins; otherwise true only
     // for C stdio streams attached to a TTY (ostringstream/file -> false).
     bool is_terminal() const;
+    // Python Console.is_dumb_terminal: exactly TERM == "dumb" (no TERM ->
+    // false). Control codes (alt screen, cursor) are suppressed on dumb.
+    bool is_dumb_terminal() const;
     // Python Console._color_system: explicit option wins; auto-detect is
     // nullopt for non-TTY/dumb terminals (=> render plain, no SGR, no links)
     // and a platform default (truecolor) on a TTY.
@@ -362,9 +379,15 @@ public:
         const Style* style, bool pad = true) const;
 
 private:
+    friend class Capture;
+    friend class ScreenContext;
     // Write a flattened segment stream (SGR per active color system, plain
-    // otherwise; records when options_.record). Shared by print/log.
+    // otherwise; records when options_.record). Shared by print/log. While a
+    // capture scope is active the bytes go to the capture buffer instead of
+    // the stream/record (Python: _enter_buffer/_render_buffer semantics).
     void emit_segments(const std::vector<Segment>& segs);
+    void begin_capture();
+    std::string end_capture();
     std::ostream& os_;
     ConsoleOptions options_;
     std::string record_buffer_;
@@ -373,6 +396,101 @@ private:
     // Python Console._thread_locals.theme_stack: base entry = Theme()
     // (DEFAULT_STYLES); push_theme appends merged entries, get reads the top.
     std::vector<std::map<std::string, Style>> theme_stack_;
+    bool capturing_{false};
+    std::string capture_buffer_;
+};
+
+// Python rich.console.Capture: RAII wrapper for Console::capture().
+// get() ends the capture if still active and returns the rendered text
+// (Python raises CaptureError before exit instead of ending); the
+// destructor ends it as a safety net if get() was never called.
+class RICH_EXPORT Capture {
+public:
+    // Only one owner ends the capture: the move source is disowned.
+    explicit Capture(Console& c) : console_(&c) {
+        console_->begin_capture();
+    }
+    Capture(Capture&& o) noexcept
+        : console_(o.console_), result_(std::move(o.result_)), ended_(o.ended_) {
+        o.console_ = nullptr;
+    }
+    Capture& operator=(Capture&&) noexcept = delete;
+    Capture(const Capture&) = delete;
+    Capture& operator=(const Capture&) = delete;
+    ~Capture();
+    std::string get() const;
+
+private:
+    Console* console_;
+    mutable std::string result_;
+    mutable bool ended_{false};
+};
+
+// Python rich.screen.Screen: fills the terminal (options width x console
+// height) with the child renderables (Python Group), padding short lines and
+// adding blank lines in `style`; lines join with "\n" ("\n\r" in
+// application_mode). No trailing newline.
+struct RICH_EXPORT Screen {
+    std::vector<AnyRenderable> renderables;  // Python Group(*renderables)
+    std::string style;                       // padding style name/def ("" = none)
+    bool application_mode{false};
+};
+inline std::vector<Segment> render_item(const Screen& screen, const Console& con,
+                                        const Options& opt) {
+    // Python Screen.__rich_console__: options.size -> (width, console
+    // height); render_lines already crops to height and pads short lines to
+    // width with `style` (set_shape is then a no-op).
+    Style resolved;
+    const Style* style =
+        screen.style.empty() ? nullptr : &(resolved = con.get_style(screen.style));
+    Options ro{opt};
+    ro.height = (con.height() > 0) ? con.height() : 25;
+    auto lines = con.render_lines(screen.renderables, ro, style, true);
+    std::vector<Segment> out;
+    for (size_t i = 0; i < lines.size(); ++i) {
+        out.insert(out.end(), lines[i].begin(), lines[i].end());
+        if (i + 1 < lines.size())
+            out.push_back({screen.application_mode ? "\n\r" : "\n",
+                           detail::kNoneStyle()});
+    }
+    return out;
+}
+inline std::pair<size_t, size_t> measure_item(const Screen& screen, const Console& con,
+                                              const Options& opt) {
+    // No __rich_measure__ in Python; the screen is always options-size wide
+    // and console-height tall.
+    (void)screen;
+    return {opt.width, (con.height() > 0) ? con.height() : 25};
+}
+
+// Python rich.console.ScreenContext: RAII wrapper for Console::screen().
+// Enters the alt screen on construction (and hides the cursor), leaves it in
+// the destructor. Entering only writes control codes when the console is a
+// real terminal (not legacy Windows, not a dumb terminal) — otherwise it is
+// an inert scope.
+class RICH_EXPORT ScreenContext {
+public:
+    // Only one owner leaves the alt screen: the move source is disowned.
+    explicit ScreenContext(Console& c, bool hide_cursor, std::string style);
+    ScreenContext(ScreenContext&& o) noexcept
+        : console_(o.console_), screen_(std::move(o.screen_)),
+          hide_cursor_(o.hide_cursor_), changed_(o.changed_) {
+        o.console_ = nullptr;
+    }
+    ScreenContext& operator=(ScreenContext&&) noexcept = delete;
+    ScreenContext(const ScreenContext&) = delete;
+    ScreenContext& operator=(const ScreenContext&) = delete;
+    ~ScreenContext();
+    // Python ScreenContext.update: replace the content (empty = keep) and/or
+    // the style (nullopt = keep), then console.print(screen, end="").
+    void update(std::vector<AnyRenderable> renderables = {},
+                std::optional<std::string> style = std::nullopt);
+
+private:
+    Console* console_;
+    Screen screen_;
+    bool hide_cursor_{true};
+    bool changed_{false};
 };
 
 // Core types above are complete here. The wrapping engine (Text.h) needs

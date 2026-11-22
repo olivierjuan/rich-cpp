@@ -44,6 +44,8 @@ TEST_CASES = [
     "log_basic",
     "log_sgr",
     "theme_push",
+    "capture_basic",
+    "screen_basic",
 ]
 
 import os

@@ -2,6 +2,7 @@ import io
 import sys
 from rich.console import Console
 from rich.panel import Panel
+from rich.screen import Screen
 from rich.table import Table
 from rich.columns import Columns
 from rich.text import Text
@@ -372,6 +373,32 @@ def generate_python_oracle(test_name: str) -> str:
         c2.log("restored")
         c2.rule("sep")
         return sink2.getvalue()
+    elif test_name == "capture_basic":
+        # Capture: prints inside the scope are diverted to cap.get() — not
+        # written to the file and not recorded. Second half proves the
+        # captured render carries the console's SGR (force_terminal).
+        sink3 = io.StringIO()
+        c3 = Console(file=sink3, width=60, record=True, legacy_windows=False)
+        with c3.capture() as cap:
+            c3.print("[bold]captured[/]")
+            c3.print("plain")
+        out = cap.get() + "file[" + sink3.getvalue() + "]rec[" + c3.export_text() + "]"
+        c3.print("after")
+        out += c3.export_text()
+        sink4 = io.StringIO()
+        c4 = Console(file=sink4, width=60, height=25, force_terminal=True,
+                     color_system="truecolor", no_color=False, legacy_windows=False)
+        with c4.capture() as cap4:
+            c4.print("[bold]sgr[/]")
+        return out + "sgr[" + cap4.get() + "]"
+    elif test_name == "screen_basic":
+        # Screen: shaped to width x console height — short lines padded to
+        # width, tall content cropped, no trailing newline.
+        sink5 = io.StringIO()
+        c5 = Console(file=sink5, width=20, height=5, record=True, legacy_windows=False)
+        c5.print(Screen(Panel(Text("Hi"), width=20)))
+        c5.print(Screen(Text("l1\nl2\nl3\nl4\nl5\nl6\nl7")))
+        return c5.export_text()
     return c.export_text()
 
 def main():
