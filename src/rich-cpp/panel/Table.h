@@ -1,6 +1,7 @@
 #pragma once
 #include <rich_core.h>
 #include <box.h>
+#include <unicode/Unicode.h>
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -30,17 +31,7 @@ inline std::string repeat_box(std::string_view glyph, size_t count) {
 }
 
 inline size_t cell_width_table(std::string_view sv) {
-    size_t width = 0;
-    size_t i = 0;
-    while (i < sv.size()) {
-        unsigned char c = static_cast<unsigned char>(sv[i]);
-        if (c < 0x80) { ++width; ++i; }
-        else if ((c & 0xE0) == 0xC0) { ++width; i += 2; }
-        else if ((c & 0xF0) == 0xE0) { ++width; i += 3; }
-        else if ((c & 0xF8) == 0xF0) { width += 2; i += 4; }
-        else { ++i; }
-    }
-    return width;
+    return unicode::string_cell_len(sv);
 }
 
 inline std::string align_text(std::string_view text, size_t width, Justify j) {

@@ -1,5 +1,6 @@
 #pragma once
 #include <rich_core.h>
+#include <unicode/Unicode.h>
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -62,17 +63,20 @@ public:
             }
         }
 
+        // Python Align: set_shape pads lines with style=None, the alignment
+        // padding uses self.style (None by default) and every line — last
+        // included — ends with Segment.line() (style=None).
         std::vector<rich::Segment> out;
         for (size_t i = 0; i < lines.size(); ++i) {
-            if (left_pad) out.push_back({std::string(left_pad, ' '), {}});
+            if (left_pad) out.push_back({std::string(left_pad, ' '), rich::detail::kNoneStyle()});
             size_t printed = 0;
             for (const auto& seg : lines[i]) {
                 printed += visual_width(seg.text);
                 out.push_back(seg);
             }
-            if (printed < line_w) out.push_back({std::string(line_w - printed, ' '), {}});
-            if (right_pad) out.push_back({std::string(right_pad, ' '), {}});
-            if (i + 1 < lines.size()) out.push_back({"\n", {}});
+            if (printed < line_w) out.push_back({std::string(line_w - printed, ' '), rich::detail::kNoneStyle()});
+            if (right_pad) out.push_back({std::string(right_pad, ' '), rich::detail::kNoneStyle()});
+            out.push_back({"\n", rich::detail::kNoneStyle()});
         }
         return out;
     }
@@ -85,17 +89,7 @@ public:
 
 private:
     static size_t visual_width(std::string_view sv) {
-        size_t width = 0;
-        size_t i = 0;
-        while (i < sv.size()) {
-            unsigned char c = static_cast<unsigned char>(sv[i]);
-            if (c < 0x80) { ++width; ++i; }
-            else if ((c & 0xE0) == 0xC0) { ++width; i += 2; }
-            else if ((c & 0xF0) == 0xE0) { ++width; i += 3; }
-            else if ((c & 0xF8) == 0xF0) { width += 2; i += 4; }
-            else { ++i; }
-        }
-        return width;
+        return unicode::string_cell_len(sv);
     }
 
     rich::AnyRenderable inner_;

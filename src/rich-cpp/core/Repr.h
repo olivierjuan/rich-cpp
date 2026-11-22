@@ -1,10 +1,12 @@
 #pragma once
 // Python-parity repr/format helpers shared by SVG export and pretty-print.
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <string_view>
+#include <unicode/Unicode.h>
 
 namespace rich::repr {
 
@@ -25,36 +27,71 @@ inline std::string py_repr_string(std::string_view s) {
     return out;
 }
 
-// Python str(float) / repr(float): shortest round-trip repr; integral values
-// keep a trailing ".0" (str(975.0) == "975.0").
+// Python str(float) / repr(float) — port of the floatobject.c format rules:
+// shortest round-trip digits (p in 1..17 significant digits), then
+//   decpt = exp10 + 1  (decimal point position within the digit string)
+//   fixed point iff -4 <= decpt <= 16, else scientific with a signed
+//   two-digit-at-least exponent ("1e+16", "1.5e-07").
+// Non-finite: "nan"/"inf"/"-inf"; -0.0 -> "-0.0".
 inline std::string py_str_float(double v) {
-    char buf[40];
-    for (int p = 1; p <= 17; ++p) {
-        std::snprintf(buf, sizeof(buf), "%.*g", p, v);
-        if (std::strtod(buf, nullptr) == v) break;
+    if (std::isnan(v)) return "nan";
+    if (std::isinf(v)) return v < 0 ? "-inf" : "inf";
+    if (v == 0.0) return std::signbit(v) ? "-0.0" : "0.0";
+
+    const bool neg = v < 0;
+    const double av = neg ? -v : v;
+
+    char buf[48];
+    int p = 1;
+    for (; p <= 17; ++p) {
+        std::snprintf(buf, sizeof(buf), "%.*g", p, av);
+        if (std::strtod(buf, nullptr) == av) break;
     }
-    std::string s = buf;
-    if (s.find('.') == std::string::npos && s.find('e') == std::string::npos &&
-        s.find('n') == std::string::npos && s.find('i') == std::string::npos)
-        s += ".0";
-    return s;
+
+    // Unambiguous digits + exponent: d[.ddd]e±XX at exactly p significant
+    // digits (same rounding as %.*g above).
+    std::snprintf(buf, sizeof(buf), "%.*e", p - 1, av);
+    std::string sci = buf;
+    const size_t epos = sci.find('e');
+    const int exp10 = std::atoi(sci.substr(epos + 1).c_str());
+    std::string digits;
+    for (size_t i = 0; i < epos; ++i)
+        if (sci[i] != '.') digits.push_back(sci[i]);
+
+    const int decpt = exp10 + 1;
+    std::string out;
+    if (decpt <= -4 || decpt > 16) {
+        // Scientific: d[.ddd]e±XX, exponent signed, >= 2 digits.
+        out = digits.substr(0, 1);
+        if (digits.size() > 1) {
+            out += '.';
+            out += digits.substr(1);
+        }
+        char ebuf[8];
+        std::snprintf(ebuf, sizeof(ebuf), "e%+03d", decpt - 1);
+        out += ebuf;
+    } else if (decpt <= 0) {
+        out = "0.";
+        out.append(static_cast<size_t>(-decpt), '0');
+        out += digits;
+    } else if (decpt < static_cast<int>(digits.size())) {
+        out = digits.substr(0, static_cast<size_t>(decpt));
+        out += '.';
+        out += digits.substr(static_cast<size_t>(decpt));
+    } else {
+        out = digits;
+        out.append(static_cast<size_t>(decpt - static_cast<int>(digits.size())), '0');
+        out += ".0";
+    }
+    if (neg) out.insert(out.begin(), '-');
+    return out;
 }
 
-// Python cell_len for layout: codepoint count, control chars are 0 cells.
-// (Full wcwidth/East-Asian-width parity is a separate pending item.)
+// Python cell_len for layout: full East-Asian-width parity via the
+// generated unicode width table (control chars 0 cells, combining 0,
+// wide/fullwidth 2, default 1).
 inline size_t cell_len(std::string_view s) {
-    size_t cells = 0;
-    for (size_t i = 0; i < s.size();) {
-        unsigned char c = static_cast<unsigned char>(s[i]);
-        size_t len = (c < 0x80) ? 1
-                   : ((c & 0xE0) == 0xC0) ? 2
-                   : ((c & 0xF0) == 0xE0) ? 3
-                   : ((c & 0xF8) == 0xF0) ? 4 : 1;
-        if (c < 0x20 || (c >= 0x7F && c < 0xA0)) { i += len; continue; } // 0 cells
-        cells += 1;
-        i += len;
-    }
-    return cells;
+    return unicode::string_cell_len(s);
 }
 
 } // namespace rich::repr

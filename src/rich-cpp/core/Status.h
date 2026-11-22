@@ -183,8 +183,10 @@ private:
 
 // Renderable ADL customization points: renders frame 0 as one line.
 inline std::vector<rich::Segment> render_item(const Status& s, const rich::Console&, const rich::Options&) {
+    // Python Spinner.render returns a Text (end="\n") -> trailing newline.
     auto segments = rich::parse_markup(s.frame(0));
     if (segments.empty()) segments.push_back({s.description(), {}});
+    segments.push_back({"\n", rich::detail::kNoneStyle()});
     return segments;
 }
 

@@ -125,11 +125,17 @@ inline std::string py_repr_style(const Style& st) {
         fields.push_back("color=" + py_repr_color(st.color));
     if (st.bg_color.type != Color::Type::None)
         fields.push_back("bgcolor=" + py_repr_color(st.bg_color));
-    if (st.bold) fields.push_back("bold=True");
-    if (st.dim) fields.push_back("dim=True");
-    if (st.italic) fields.push_back("italic=True");
-    if (st.underline) fields.push_back("underline=True");
-    if (st.reverse) fields.push_back("reverse=True");
+    // Python repr emits a flag when it is set OR explicitly set-to-false in
+    // the constructor (tracked via Style.explicit_bits).
+    auto push_flag = [&fields](const char* name, bool value, bool explicit_set) {
+        if (!value && !explicit_set) return;
+        fields.push_back(std::string(name) + (value ? "=True" : "=False"));
+    };
+    push_flag("bold", st.bold, (st.explicit_bits & 0x01) != 0);
+    push_flag("dim", st.dim, (st.explicit_bits & 0x02) != 0);
+    push_flag("italic", st.italic, (st.explicit_bits & 0x04) != 0);
+    push_flag("underline", st.underline, (st.explicit_bits & 0x08) != 0);
+    push_flag("reverse", st.reverse, (st.explicit_bits & 0x10) != 0);
     std::string out = "Style(";
     for (size_t i = 0; i < fields.size(); ++i) {
         if (i) out += ", ";

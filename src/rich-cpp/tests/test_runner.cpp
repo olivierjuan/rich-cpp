@@ -12,6 +12,7 @@
 #include <Live.h>
 #include <ProgressTracker.h>
 #include <Pretty.h>
+#include <json/Json.h>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -85,6 +86,17 @@ int main(int argc, char* argv[]) {
         small_console.print(rich::AnyRenderable(
             rich::text::Text("The quick brown fox jumps over the lazy dog near the riverbank")
         ));
+        std::cout << small_console.export_text();
+        return 0;
+    } else if (test_name == "text_wrap_cjk") {
+        rich::ConsoleOptions small_opts{.width = 20, .record = true, .legacy_windows = false};
+        std::ostringstream small_oss;
+        rich::Console small_console(small_oss, small_opts);
+        std::string hanzi = "\xE6\xBC\xA2\xE5\xAD\x97"; // 漢字
+        std::string content;
+        for (int k = 0; k < 10; ++k) content += hanzi;
+        content += " abc def";
+        small_console.print(rich::AnyRenderable(rich::text::Text(content)));
         std::cout << small_console.export_text();
         return 0;
     } else if (test_name == "tree_basic") {
@@ -205,6 +217,15 @@ int main(int argc, char* argv[]) {
         svg_console.print("plain");
         std::cout << svg_console.export_svg("Rich");
         return 0;
+    } else if (test_name == "export_html") {
+        // HTML snapshot of the same styled markup + plain content as the
+        // export_svg case, default options (class-based styles).
+        rich::ConsoleOptions h_opts{.width = 80, .record = true, .legacy_windows = false};
+        rich::Console hc(oss, h_opts);
+        hc.print("[bold red]Hello[/] [on blue]colored[/] [reverse]reversed[/] [dim]dim[/] [italic]it[/] [underline]ul[/]");
+        hc.print("plain");
+        std::cout << hc.export_html();
+        return 0;
     } else if (test_name == "emoji_basic") {
         rich::ConsoleOptions e_opts{.width = 80, .record = true, .legacy_windows = false};
         rich::Console ec(oss, e_opts);
@@ -251,6 +272,53 @@ int main(int argc, char* argv[]) {
         pc.print(rich::pretty::pretty(std::vector<std::optional<int>>{
             std::nullopt, 1, std::nullopt}));
         std::cout << pc.export_text();
+        return 0;
+    } else if (test_name == "pretty_options") {
+        rich::ConsoleOptions p2_opts{.width = 40, .record = true, .legacy_windows = false};
+        rich::Console pc2(oss, p2_opts);
+        {
+            rich::pretty::PrettyOptions o;
+            o.max_length = 2;
+            pc2.print(rich::pretty::pretty(std::vector<int>{1, 2, 3, 4, 5}, o));
+        }
+        {
+            rich::pretty::PrettyOptions o;
+            o.max_string = 5;
+            pc2.print(rich::pretty::pretty(std::vector<std::string>{std::string(30, 'a'), "b"}, o));
+        }
+        {
+            rich::pretty::PrettyOptions o;
+            o.max_depth = 1;
+            pc2.print(rich::pretty::pretty(std::vector<std::vector<std::vector<int>>>{
+                                                {{1}, {2}}, {{3}}},
+                                            o));
+        }
+        {
+            rich::pretty::PrettyOptions o;
+            o.expand_all = true;
+            pc2.print(rich::pretty::pretty(std::vector<int>{1, 2, 3, 4, 5, 6, 7, 8}, o));
+        }
+        {
+            rich::pretty::PrettyOptions o;
+            o.indent_guides = true;
+            pc2.print(rich::pretty::pretty(std::vector<std::vector<std::string>>{
+                                                {std::string(20, 'x')},
+                                                {std::string(16, 'y')}},
+                                            o));
+        }
+        std::cout << pc2.export_text();
+        return 0;
+    } else if (test_name == "json_basic") {
+        rich::ConsoleOptions j_opts{.width = 80, .record = true, .legacy_windows = false};
+        rich::Console jc(oss, j_opts);
+        jc.print(rich::json_view::json("{\"a\": 1, \"b\": [true, null, \"x\"], \"c\": 2.5}"));
+        jc.print(rich::json_view::json("[1, 2, 3]"));
+        jc.print(rich::json_view::json("{}"));
+        jc.print(rich::json_view::json("{\"dup\": 1, \"dup\": 2, \"s\": \"hi\\n\\u0041\", "
+                                       "\"f\": -0.5, \"e\": 1e2, \"wide\": \"" +
+                                       std::string(90, 'y') + "\"}"));
+        jc.print(rich::json_view::json("{\"u\": \"\\u6f22\\u5b57\", \"n\": NaN, \"inf\": Infinity}"));
+        std::cout << jc.export_text();
         return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";

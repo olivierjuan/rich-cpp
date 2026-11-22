@@ -11,6 +11,7 @@
 #include <sstream>
 #include <utility>
 #include <cstdint>
+#include <algorithm>
 
 namespace rich {
 
@@ -45,6 +46,11 @@ struct RICH_EXPORT Style {
     bool reverse{false};
     Color color;
     Color bg_color;
+    // Python Style tracks which boolean attributes were *explicitly set* in
+    // the constructor; repr emits them even when false (e.g.
+    // Style(color='green', bold=False) -> "bold=False"). Bit 0=bold,
+    // 1=dim, 2=italic, 3=underline, 4=reverse.
+    uint8_t explicit_bits{0};
 
     constexpr bool operator==(const Style&) const = default;
 };
@@ -158,6 +164,11 @@ public:
     // id prefix (default: derived from content via adler32, like Python).
     std::string export_svg(const std::string& title = "Rich",
                            const std::string& unique_id = "") const;
+    // Console contents as a standalone HTML document (Python
+    // Console.export_html parity, DEFAULT_TERMINAL_THEME). Requires
+    // record=true. inline_styles: true -> per-span style attributes;
+    // false (default) -> <style> block with r1..rN classes.
+    std::string export_html(bool inline_styles = false) const;
     // Segment-level access to the recorded buffer (styles preserved).
     const std::vector<Segment>& recorded_segments() const noexcept { return record_segments_; }
 
@@ -167,6 +178,15 @@ private:
     std::string record_buffer_;
     std::vector<Segment> record_segments_;
 };
+
+// Core types above are complete here. The wrapping engine (Text.h) needs
+// Segment/Style/Options/Console defined, and the render helpers below need
+// the engine — so Text.h is pulled in at global scope between the two.
+} // namespace rich
+
+#include <Text.h>
+
+namespace rich {
 
 // Pipe composition
 template <typename F>
@@ -179,11 +199,36 @@ struct Text {
     std::string content;
     Style style;
 };
-inline std::vector<Segment> render_item(const Text& t, const Console&, const Options&) {
-    return {{t.content, t.style}};
+inline std::vector<Segment> render_item(const Text& t, const Console&, const Options& opt) {
+    // Python Text.__rich_console__: wrap at console width (cell-aware), join
+    // lines with style-None newlines, append the end ("\n").
+    size_t width = (opt.width > 0) ? opt.width : 80;
+    std::vector<Segment> single{{t.content, t.style}};
+    auto out = text::wrap_detail::wrap_styled(single, width, true, detail::kNoneStyle());
+    out.push_back({"\n", detail::kNoneStyle()});
+    return out;
 }
 inline std::pair<size_t, size_t> measure_item(const Text& t, const Console&, const Options&) {
-    return {t.content.size(), 1};
+    // Python Text.__rich_measure__: min = longest word's cell width,
+    // max = widest line's cell width.
+    size_t max_line = 0, longest_word = 0;
+    {
+        std::string cur;
+        for (char c : t.content) {
+            if (c == '\n') {
+                max_line = std::max(max_line, unicode::string_cell_len(cur));
+                cur.clear();
+            } else cur.push_back(c);
+        }
+        max_line = std::max(max_line, unicode::string_cell_len(cur));
+    }
+    for (const auto& w : text::wrap_detail::words(t.content)) {
+        std::string_view core = w.text;
+        while (!core.empty() && (core.back() == ' ' || core.back() == '\t'))
+            core.remove_suffix(1);
+        longest_word = std::max(longest_word, unicode::string_cell_len(core));
+    }
+    return {std::min(longest_word, max_line), max_line};
 }
 
 // StyledText primitive
@@ -195,18 +240,47 @@ RICH_EXPORT std::vector<Segment> parse_markup(std::string_view sv);
 // _emoji_replace parity. Defined in rich_core.cpp on top of the generated
 // EmojiTable.h (kept out of this header for compile times).
 RICH_EXPORT std::string emoji_replace(std::string_view text);
-inline std::vector<Segment> render_item(const StyledText& t, const Console&, const Options&) {
-    // Python parity (markup.render): a string with no '[' becomes
-    // Text(text, style="") with no spans → Segment(text) carries style=None,
-    // while markup strings render gap pieces with an explicit empty Style().
+inline std::vector<Segment> render_item(const StyledText& t, const Console&, const Options& opt) {
+    // Python markup.render: a string with no '[' becomes Text(text,
+    // style="") with no spans → Segment(text) carries style=None, while
+    // markup strings render gap pieces with an explicit empty Style().
     // Emoji shortcodes are replaced in both paths (Python applies
-    // _emoji_replace to each text chunk).
-    if (t.content.find('[') == std::string::npos)
-        return {{emoji_replace(t.content), detail::kNoneStyle()}};
-    return parse_markup(t.content);
+    // _emoji_replace to each text chunk). The result is a Text, so the
+    // segment stream is cell-wrapped at the console width with style-None
+    // inter-line newlines plus the trailing end ("\n").
+    size_t width = (opt.width > 0) ? opt.width : 80;
+    if (t.content.find('[') == std::string::npos) {
+        std::string text = emoji_replace(t.content);
+        auto out = text::wrap_detail::wrap_styled({{text, detail::kNoneStyle()}}, width,
+                                                  true, detail::kNoneStyle());
+        out.push_back({"\n", detail::kNoneStyle()});
+        return out;
+    }
+    auto segs = parse_markup(t.content);
+    auto out = text::wrap_detail::wrap_styled(segs, width, true, detail::kNoneStyle());
+    out.push_back({"\n", detail::kNoneStyle()});
+    return out;
 }
 inline std::pair<size_t, size_t> measure_item(const StyledText& t, const Console&, const Options&) {
-    return {t.content.size(), 1};
+    // Same measurement contract as Text (MarkupText delegates to it).
+    size_t max_line = 0, longest_word = 0;
+    {
+        std::string cur;
+        for (char c : t.content) {
+            if (c == '\n') {
+                max_line = std::max(max_line, unicode::string_cell_len(cur));
+                cur.clear();
+            } else cur.push_back(c);
+        }
+        max_line = std::max(max_line, unicode::string_cell_len(cur));
+    }
+    for (const auto& w : text::wrap_detail::words(t.content)) {
+        std::string_view core = w.text;
+        while (!core.empty() && (core.back() == ' ' || core.back() == '\t'))
+            core.remove_suffix(1);
+        longest_word = std::max(longest_word, unicode::string_cell_len(core));
+    }
+    return {std::min(longest_word, max_line), max_line};
 }
 
 // Rule primitive

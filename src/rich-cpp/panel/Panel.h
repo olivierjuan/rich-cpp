@@ -1,6 +1,7 @@
 #pragma once
 #include <rich_core.h>
 #include <box.h>
+#include <unicode/Unicode.h>
 #include <algorithm>
 #include <string>
 #include <sstream>
@@ -26,27 +27,7 @@ inline std::string repeat_utf8(std::string_view glyph, size_t count) {
 }
 
 inline size_t cell_width(std::string_view sv) {
-    size_t width = 0;
-    size_t i = 0;
-    while (i < sv.size()) {
-        unsigned char c = static_cast<unsigned char>(sv[i]);
-        if (c < 0x80) {
-            ++width;
-            ++i;
-        } else if ((c & 0xE0) == 0xC0) {
-            ++width;
-            i += 2;
-        } else if ((c & 0xF0) == 0xE0) {
-            ++width;
-            i += 3;
-        } else if ((c & 0xF8) == 0xF0) {
-            width += 2;
-            i += 4;
-        } else {
-            ++i;
-        }
-    }
-    return width;
+    return unicode::string_cell_len(sv);
 }
 } // namespace
 
@@ -63,7 +44,8 @@ public:
         size_t title_vis_w = 0;
         for (const auto& s : title_segs) title_vis_w += cell_width(s.text);
 
-        rich::Style border_style{.dim = true, .color = rich::Color::from_ansi(90)};
+        // Python Panel default border_style="none" -> Style.null() (no dim, no color).
+        rich::Style border_style{};
         const auto& bx = options_.box;
 
         if (options_.show_border) {
@@ -149,21 +131,20 @@ public:
         size_t line_count = 1;
 
         for (const auto& s : inner_segs) {
+            std::string_view sv(s.text);
             size_t i = 0;
-            while (i < s.text.size()) {
-                char c = s.text[i];
+            while (i < sv.size()) {
+                char c = sv[i];
                 if (c == '\n') {
                     max_line = std::max(max_line, current);
                     current = 0;
                     ++line_count;
                     ++i;
                 } else {
-                    unsigned char uc = static_cast<unsigned char>(c);
-                    if (uc < 0x80) { ++current; ++i; }
-                    else if ((uc & 0xE0) == 0xC0) { ++current; i += 2; }
-                    else if ((uc & 0xF0) == 0xE0) { ++current; i += 3; }
-                    else if ((uc & 0xF8) == 0xF0) { current += 2; i += 4; }
-                    else { ++i; }
+                    size_t j = i;
+                    char32_t cp = unicode::decode_utf8(sv, j);
+                    current += static_cast<size_t>(unicode::get_character_cell_size(cp));
+                    i = j;
                 }
             }
         }

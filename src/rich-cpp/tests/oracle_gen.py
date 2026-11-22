@@ -42,6 +42,10 @@ def generate_python_oracle(test_name: str) -> str:
         c_small = Console(file=sink, width=20, record=True, legacy_windows=False)
         c_small.print("The quick brown fox jumps over the lazy dog near the riverbank")
         return c_small.export_text()
+    elif test_name == "text_wrap_cjk":
+        c_small = Console(file=sink, width=20, record=True, legacy_windows=False)
+        c_small.print("漢字" * 10 + " abc def")
+        return c_small.export_text()
     elif test_name == "tree_basic":
         t = Tree("Root")
         t.add("Child 1")
@@ -130,6 +134,13 @@ def generate_python_oracle(test_name: str) -> str:
         c2.print("[bold red]Hello[/] [on blue]colored[/] [reverse]reversed[/] [dim]dim[/] [italic]it[/] [underline]ul[/]")
         c2.print("plain")
         return c2.export_svg(title="Rich")
+    elif test_name == "export_html":
+        # HTML terminal snapshot: same styled markup + plain content as the
+        # export_svg case, exported with default options (class-based styles).
+        c2 = Console(file=sink, width=80, record=True, legacy_windows=False)
+        c2.print("[bold red]Hello[/] [on blue]colored[/] [reverse]reversed[/] [dim]dim[/] [italic]it[/] [underline]ul[/]")
+        c2.print("plain")
+        return c2.export_html()
     elif test_name == "emoji_basic":
         # Emoji shortcode replacement: known codes, unknown code left verbatim,
         # variant suffixes, inside markup tags.
@@ -161,6 +172,25 @@ def generate_python_oracle(test_name: str) -> str:
         c2.print((1, "two"))
         c2.print((42,))  # 1-tuple keeps trailing comma
         c2.print([None, 1, None])  # optionals in sequences
+        return c2.export_text()
+    elif test_name == "pretty_options":
+        from rich.pretty import Pretty
+        c2 = Console(file=sink, width=40, record=True, legacy_windows=False)
+        c2.print(Pretty([1, 2, 3, 4, 5], max_length=2))
+        c2.print(Pretty(["a" * 30, "b"], max_string=5))
+        c2.print(Pretty([[[1], [2]], [[3]]], max_depth=1))
+        c2.print(Pretty([1, 2, 3, 4, 5, 6, 7, 8], expand_all=True))
+        c2.print(Pretty([["x" * 20], ["y" * 16]], indent_guides=True))
+        return c2.export_text()
+    elif test_name == "json_basic":
+        from rich.json import JSON
+        c2 = Console(file=sink, width=80, record=True, legacy_windows=False)
+        c2.print(JSON('{"a": 1, "b": [true, null, "x"], "c": 2.5}'))
+        c2.print(JSON('[1, 2, 3]'))
+        c2.print(JSON('{}'))
+        c2.print(JSON('{"dup": 1, "dup": 2, "s": "hi\\n\\u0041", "f": -0.5, '
+                      '"e": 1e2, "wide": "' + "y" * 90 + '"}'))
+        c2.print(JSON('{"u": "\\u6f22\\u5b57", "n": NaN, "inf": Infinity}'))
         return c2.export_text()
     return c.export_text()
 

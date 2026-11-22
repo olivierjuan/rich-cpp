@@ -1,5 +1,6 @@
 #pragma once
 #include <rich_core.h>
+#include <unicode/Unicode.h>
 #include <algorithm>
 #include <vector>
 #include <string>
@@ -8,27 +9,7 @@ namespace rich::decorator {
 
 namespace {
 inline size_t visual_width(std::string_view sv) {
-    size_t width = 0;
-    size_t i = 0;
-    while (i < sv.size()) {
-        unsigned char c = static_cast<unsigned char>(sv[i]);
-        if (c < 0x80) {
-            ++width;
-            ++i;
-        } else if ((c & 0xE0) == 0xC0) {
-            ++width;
-            i += 2;
-        } else if ((c & 0xF0) == 0xE0) {
-            ++width;
-            i += 3;
-        } else if ((c & 0xF8) == 0xF0) {
-            width += 2;
-            i += 4;
-        } else {
-            ++i;
-        }
-    }
-    return width;
+    return unicode::string_cell_len(sv);
 }
 } // namespace
 

@@ -1,5 +1,6 @@
 #include "rich_core.h"
 #include "Svg.h"
+#include "Html.h"
 #include "Emoji.h"
 #include <sstream>
 #include <cstdlib>
@@ -121,6 +122,80 @@ std::string repeat_utf8_core(std::string_view glyph, size_t count) {
 }
 } // namespace
 
+namespace {
+// Crop sv to at most `take` cells (never splitting a codepoint); mirrors
+// rich.cells.set_cell_size in the crop direction.
+std::string crop_cells(std::string_view sv, size_t take) {
+    std::string cut;
+    if (take == 0) return cut;
+    cut.reserve(sv.size());
+    size_t cells = 0, i = 0;
+    while (i < sv.size() && cells < take) {
+        size_t j = i;
+        char32_t cp = unicode::decode_utf8(sv, j);
+        size_t w = static_cast<size_t>(unicode::get_character_cell_size(cp));
+        if (cells + w > take) break;
+        cut.append(sv.substr(i, j - i));
+        cells += w;
+        i = j;
+    }
+    return cut;
+}
+
+// Port of rich.segment.Segment.split_and_crop_lines(segments, length,
+// pad=False, include_new_lines=True), flattened into one stream:
+// every '\n' becomes a standalone style=None segment and each line is
+// cropped to `length` cells at cell boundaries (no padding).
+std::vector<Segment> split_and_crop_lines(std::vector<Segment>&& segments, size_t length) {
+    auto adjust = [&](const std::vector<Segment>& line) {
+        std::vector<Segment> out;
+        size_t line_length = 0;
+        for (const auto& s : line) line_length += unicode::string_cell_len(s.text);
+        if (line_length <= length) return std::vector<Segment>(line);
+        size_t cur = 0;
+        for (const auto& s : line) {
+            size_t sl = unicode::string_cell_len(s.text);
+            if (cur + sl < length) {
+                out.push_back(s);
+                cur += sl;
+            } else {
+                out.push_back({crop_cells(s.text, length - cur), s.style});
+                break;
+            }
+        }
+        return out;
+    };
+    std::vector<Segment> out;
+    std::vector<Segment> line;
+    for (auto& s : segments) {
+        if (s.text.find('\n') == std::string::npos) {
+            line.push_back(std::move(s));
+            continue;
+        }
+        std::string_view sv(s.text);
+        size_t start = 0;
+        for (;;) {
+            size_t nl = sv.find('\n', start);
+            if (nl == std::string::npos) {
+                if (start < sv.size()) line.push_back({std::string(sv.substr(start)), s.style});
+                break;
+            }
+            if (nl > start) line.push_back({std::string(sv.substr(start, nl - start)), s.style});
+            auto cropped = adjust(line);
+            line.clear();
+            out.insert(out.end(), std::make_move_iterator(cropped.begin()), std::make_move_iterator(cropped.end()));
+            out.push_back({"\n", detail::kNoneStyle()});
+            start = nl + 1;
+        }
+    }
+    if (!line.empty()) {
+        auto cropped = adjust(line);
+        out.insert(out.end(), std::make_move_iterator(cropped.begin()), std::make_move_iterator(cropped.end()));
+    }
+    return out;
+}
+} // namespace
+
 void Console::print(const AnyRenderable& ar) {
     init_terminal();
     size_t active_w = (options_.width > 0) ? options_.width : detect_terminal_width();
@@ -128,8 +203,13 @@ void Console::print(const AnyRenderable& ar) {
     // Layouts query Console::height() instead.
     Options opt{.width = active_w};
     auto segments = ar.render(*this, opt);
+    // Python print(): renderable segments pass through
+    // Segment.split_and_crop_lines(width, pad=False); each '\n' becomes a
+    // standalone style=None segment, over-wide lines crop at cell boundaries.
+    // (Renderables carry their own trailing newline, cf. Text end="\n".)
+    auto out = split_and_crop_lines(std::move(segments), active_w);
 
-    for (const auto& s : segments) {
+    for (const auto& s : out) {
         bool styled = has_style(s.style);
         if (styled) os_ << style_to_ansi(s.style);
         os_ << s.text;
@@ -138,17 +218,6 @@ void Console::print(const AnyRenderable& ar) {
         if (options_.record) {
             record_buffer_ += s.text;
             record_segments_.push_back(s);
-        }
-    }
-    bool ends_nl = !segments.empty() && !segments.back().text.empty() && segments.back().text.back() == '\n';
-    if (!ends_nl) {
-        os_ << '\n';
-        if (options_.record) {
-            record_buffer_ += '\n';
-            // Python records the appended newline as Segment('\n') with
-            // style=None; repr parity (export_svg hashing) requires the
-            // sentinel so the style is omitted from the repr.
-            record_segments_.push_back({"\n", detail::kNoneStyle()});
         }
     }
 }
@@ -164,6 +233,17 @@ void Console::rule(std::string_view title) {
 
 std::string Console::export_text() const {
     return record_buffer_;
+}
+
+std::string Console::export_html(bool inline_styles) const {
+    // Python requires record=True; when not recording the buffer is empty and
+    // we render an (empty) document rather than crash.
+    const std::vector<Segment>* segs = &record_segments_;
+    if (!options_.record) {
+        static const std::vector<Segment> empty;
+        segs = &empty;
+    }
+    return html::render_html(*segs, inline_styles);
 }
 
 // Python style=None sentinel: color fields unset (Type::None) with ansi=200
@@ -367,7 +447,8 @@ std::string Console::export_svg(const std::string& title, const std::string& uni
 std::vector<Segment> render_item(const Rule& r, const Console& c, const Options& opt) {
     size_t target_width = (r.width > 0) ? r.width : ((opt.width > 0) ? opt.width : 80);
     std::vector<Segment> out;
-    Style dash_style{.dim = true, .color = Color::from_ansi(90)};
+    // Python Rule default style="rule.line" -> bright_green; title style="rule.text" -> Style.null().
+    Style dash_style{.color = Color::from_ansi(92)};
 
     if (r.title.empty()) {
         out.push_back({repeat_utf8_core("─", target_width) + "\n", dash_style});
@@ -379,7 +460,7 @@ std::vector<Segment> render_item(const Rule& r, const Console& c, const Options&
     size_t right = (target_width >= side + title_len + 2) ? (target_width - side - title_len - 2) : side;
 
     out.push_back({repeat_utf8_core("─", side) + " ", dash_style});
-    out.push_back({r.title, Style{.bold = true, .color = Color::from_ansi(97)}});
+    out.push_back({r.title, Style{}});
     out.push_back({" " + repeat_utf8_core("─", right) + "\n", dash_style});
     return out;
 }

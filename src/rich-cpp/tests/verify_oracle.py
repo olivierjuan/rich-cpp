@@ -12,6 +12,7 @@ TEST_CASES = [
     "box_heavy",
     "box_ascii",
     "text_wrap",
+    "text_wrap_cjk",
     "tree_basic",
     "align_center",
     "align_right",
@@ -24,10 +25,13 @@ TEST_CASES = [
     "progress_tracker",
     "progress_speed",
     "export_svg",
+    "export_html",
     "emoji_basic",
     "pretty_list",
     "pretty_dict",
     "pretty_scalars",
+    "pretty_options",
+    "json_basic",
 ]
 
 import os
