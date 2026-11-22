@@ -19,7 +19,7 @@ graph TD
 | **Tier 1** | Core Polish & Text Foundations (Boxes, Wrapping, Terminal Width, NO_COLOR) | 0 (Pure C++20) | ✅ **Completed & Validated (16/16 Oracle)** |
 | **Tier 2** | Advanced Visual Layout (Tree, Align, Constrain, Layout) | 0 (Pure C++20) | ✅ **Completed & Validated (16/16 Oracle)** |
 | **Tier 3** | Dynamic & Live Displays (Progress Bars, Spinners) | 0 (`std::jthread` / VT escapes) | ✅ **Completed & Validated (20/20 Oracle)** |
-| **Tier 4** | Heavy Ecosystem Modules (Markdown, Highlighting, Stacktrace) | Optional 3rd-party (`md4c`, `cpptrace`) | 🔶 **In Progress — SVG Export done (21/21 Oracle)** |
+| **Tier 4** | Heavy Ecosystem Modules (Markdown, Highlighting, Stacktrace) | Optional 3rd-party (`md4c`, `cpptrace`) | 🔶 **In Progress — SVG Export + Emoji done; Pretty layout-parity (25/25 Oracle)** |
 
 ---
 
@@ -140,6 +140,20 @@ graph TD
 - [x] **Record-mode segment buffer**: `Console` now records `Segment`s (styles preserved), not just text.
 - [x] **Markup parity fixes**: `on <color>` background tags (all 16 standard + bright colors) parsed as one tag token; plain strings without `[` record Python's `style=None` sentinel (distinct from markup gap pieces' empty `Style()`) for repr parity.
 - [x] Oracle test: `export_svg` (styled markup line + plain line) — **21/21 byte-exact**.
+
+### 4.6 Emoji Shortcodes (`rich::emoji_replace`) *(Completed - Zero Dependencies)*
+- [x] **Generated lookup table (`src/rich-cpp/core/EmojiTable.h`, 3608 entries)**:
+  - Regenerate with `.venv/Scripts/python.exe src/rich-cpp/scripts/emoji_gen.py` (dev-time only; the C++ library stays zero-dep).
+  - Sorted by shortcode (binary-search lookup); values octal-escaped UTF-8 for encoding-independent compilation.
+- [x] **Replacement (`src/rich-cpp/core/Emoji.h`)**: `_emoji_replace` regex port — `:name:` → emoji (name lowercased), unknown codes left verbatim, `-emoji`/`-text` variant suffixes append U+FE0F/U+FE0E.
+- [x] **Integration**: applied to every literal text chunk of `StyledText`/`parse_markup` (Python parity), so shortcodes work in plain prints and inside markup/panel titles/table cells.
+- [x] Oracle test: `emoji_basic` (known/unknown codes, variants, inside markup).
+
+### 4.7 Pretty Print (`rich::pretty::pretty`) *(Layout-Parity Subset)*
+- [x] **Repr tree + expansion engine (`src/rich-cpp/core/Pretty.h`)**: port of Python `rich.pretty` `Node`/`_Line` — containers stay on one line while their token stream fits the console width, else expand (open brace line, children indented +4 with `,` separators, close brace line). Nested containers re-check independently.
+- [x] **Portable types**: sequences (`vector`/`list`/`deque`/`array`), maps (`map`/`unordered_map`), `pair`/`tuple` (incl. 1-tuple trailing comma), `optional` (`None`), scalars with Python reprs (`True`/`False`/`None`, `str(float)`, quoted strings).
+- [x] Oracle tests: `pretty_list`, `pretty_dict` (inline + expanded + nested), `pretty_scalars`.
+- [ ] Not portable / pending: struct introspection, `ReprHighlighter` syntax coloring, `max_length`/`max_string`/`max_depth` truncation.
 
 | Module | Python Rich Equivalent | Proposed C++ Strategy | Dependency Impact | Recommendation |
 | :--- | :--- | :--- | :--- | :--- |

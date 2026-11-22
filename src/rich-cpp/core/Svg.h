@@ -12,10 +12,10 @@
 //   - unique_id defaults to "terminal-" + adler32 of the joined repr of the
 //     recorded segments (Python-parity hashing, deterministic per content).
 #include <rich_core.h>
+#include "Repr.h"
 
 #include <cmath>
 #include <cstdint>
-#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -79,22 +79,8 @@ inline uint32_t adler32(const std::string& data) {
     return (b << 16) | a;
 }
 
-// Python repr() of the values that appear in recorded Segment reprs.
-inline std::string py_repr_string(const std::string& s) {
-    std::string out = "'";
-    for (char ch : s) {
-        switch (ch) {
-            case '\\': out += "\\\\"; break;
-            case '\'': out += "\\'"; break;
-            case '\n': out += "\\n"; break;
-            case '\r': out += "\\r"; break;
-            case '\t': out += "\\t"; break;
-            default:   out += ch;
-        }
-    }
-    out += "'";
-    return out;
-}
+// Python repr() of strings: see Repr.h (rich::repr::py_repr_string).
+using repr::py_repr_string;
 
 // Style repr — Python parity: Style(color=..., bgcolor=..., bold=True, ...)
 // only lists non-default fields; Color repr lists name/type/number/triplet
@@ -201,43 +187,8 @@ inline std::string fmt_g(double v) {
     return buf;
 }
 
-// Python str(float) for template substitution: shortest round-trip repr;
-// integral values keep a trailing ".0" (str(975.0) == "975.0").
-inline std::string py_str_float(double v) {
-    char buf[40];
-    for (int p = 1; p <= 17; ++p) {
-        std::snprintf(buf, sizeof(buf), "%.*g", p, v);
-        if (std::strtod(buf, nullptr) == v) break;
-    }
-    std::string s = buf;
-    if (s.find('.') == std::string::npos && s.find('e') == std::string::npos &&
-        s.find('n') == std::string::npos && s.find('i') == std::string::npos)
-        s += ".0";
-    return s;
-}
-
-// Segment.split_and_crop_lines(segments, length=width) parity:
-//   - split at '\n' (a '\n' inside a segment's text starts a new line),
-//   - pad every line to `width` cells with ONE Segment of spaces (style=pad),
-//   - append a Segment('\n') after each completed line,
-//   - crop overlong lines to `width` cells,
-//   - trailing content without '\n' is padded and yielded,
-//   - no trailing empty line after a final '\n'.
-// cell_len counts '\n' as 0 cells (Python get_character_cell_size: <32 → 0).
-inline size_t cell_len(const std::string& s) {
-    size_t cells = 0;
-    for (size_t i = 0; i < s.size();) {
-        unsigned char c = static_cast<unsigned char>(s[i]);
-        size_t len = (c < 0x80) ? 1
-                   : ((c & 0xE0) == 0xC0) ? 2
-                   : ((c & 0xF0) == 0xE0) ? 3
-                   : ((c & 0xF8) == 0xF0) ? 4 : 1;
-        if (c < 0x20 || (c >= 0x7F && c < 0xA0)) { i += len; continue; } // 0 cells
-        cells += 1;
-        i += len;
-    }
-    return cells;
-}
+using repr::py_str_float;
+using repr::cell_len;
 
 // Codepoint count (Python len()) — used for textLength.
 inline size_t py_len(const std::string& s) {

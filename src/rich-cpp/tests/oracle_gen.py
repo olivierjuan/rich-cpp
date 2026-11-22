@@ -130,6 +130,38 @@ def generate_python_oracle(test_name: str) -> str:
         c2.print("[bold red]Hello[/] [on blue]colored[/] [reverse]reversed[/] [dim]dim[/] [italic]it[/] [underline]ul[/]")
         c2.print("plain")
         return c2.export_svg(title="Rich")
+    elif test_name == "emoji_basic":
+        # Emoji shortcode replacement: known codes, unknown code left verbatim,
+        # variant suffixes, inside markup tags.
+        c2 = Console(file=sink, width=80, record=True, legacy_windows=False)
+        c2.print("Hello :smile: and :dog: and :notanemoji:")
+        c2.print("[bold red]:heart:[/] variant :copyright-emoji: :copyright-text:")
+        return c2.export_text()
+    elif test_name == "pretty_list":
+        c2 = Console(file=sink, width=80, record=True, legacy_windows=False)
+        c2.print([1, 2, 3])
+        c2.print(["apple", "banana"])
+        c2.print([])
+        c2.print(list(range(15, 40)))  # exceeds width -> one item per line
+        return c2.export_text()
+    elif test_name == "pretty_dict":
+        c2 = Console(file=sink, width=80, record=True, legacy_windows=False)
+        c2.print({"a": 1, "b": 2})
+        c2.print({})  # empty
+        c2.print({f"key{i:02d}": i for i in range(12)})  # exceeds width (sorted keys)
+        c2.print({"nums": [1, 2], "other": [3, 4]})  # nested inline
+        c2.print({"nums": list(range(15, 40)), "other": [1]})  # nested expanded
+        return c2.export_text()
+    elif test_name == "pretty_scalars":
+        c2 = Console(file=sink, width=80, record=True, legacy_windows=False)
+        c2.print(42)
+        c2.print(1.5)
+        c2.print(True)
+        c2.print(None)
+        c2.print((1, "two"))
+        c2.print((42,))  # 1-tuple keeps trailing comma
+        c2.print([None, 1, None])  # optionals in sequences
+        return c2.export_text()
     return c.export_text()
 
 def main():

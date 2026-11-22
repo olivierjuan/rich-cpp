@@ -14,7 +14,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | **Markup & Text** | Inline markup `[bold red]...[/]` | `rich.markup` | `rich::parse_markup`, `StyledText` | ✅ Done | ✅ Yes | Tag nesting, `[/]` closing, bracket escaping `[[`, `on <color>` backgrounds |
 | | Text formatting & wrapping | `rich.text` | `rich::text::Text` | ✅ Done | ✅ Yes | Soft word wrapping matching Python Rich output |
 | | Unicode Cell Width Calculation | `rich.cells` | `cell_width` / `visual_width` | 🟡 Partial | ✅ Yes | Multi-byte UTF-8 width (1 vs 2 cols); full East Asian Width tables pending |
-| | Emoji codes `:smile:` | `rich.emoji` | N/A | ❌ Not Started | ❌ No | Emoji shortcode lookup table |
+| | Emoji codes `:smile:` | `rich.emoji` | `rich::emoji_replace` | ✅ Done | ✅ Yes | Python-parity `:name:` table (3608 codes, generated `EmojiTable.h`), `-emoji`/`-text` variants, unknown codes verbatim |
 | **Layout & Containers** | `Panel` | `rich.panel` | `rich::panel::Panel` | ✅ Done | ✅ Yes | Centered titles, borders, multiline support, custom box styles |
 | | `Padding` | `rich.padding` | `rich::decorator::Padding` | ✅ Done | ✅ Yes | Top/bottom and left/right padding decorator |
 | | `Columns` | `rich.columns` | `rich::decorator::Columns` | ✅ Done | ✅ Yes | Multi-row wrapping, varied card widths, left-alignment |
@@ -30,7 +30,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | `track()` range adapter | `rich.progress` | `rich::progress::track(tracker, desc)(range)` | ✅ Done | ✅ Yes | Ticks task per iteration; exception-safe; demo in `quick.cpp` §9 |
 | | `Live` (dynamic terminal refresh) | `rich.live` | `rich::live::Live` | ✅ Done | ✅ Yes | In-place VT redraw, non-TTY degradation, transient clear; oracle `live_static` |
 | | `Status` spinner | `rich.status` | `rich::status::Status` | ✅ Done | ✅ Yes | Braille frames, 80 ms interval, deterministic teardown; oracle `status_static` |
-| **Data & Inspection** | `Pretty` print (data structures) | `rich.pretty` | N/A | ❌ Not Started | ❌ No | Pretty printer for `std::vector`, `std::map`, `std::tuple`, structs |
+| **Data & Inspection** | `Pretty` print (data structures) | `rich.pretty` | `rich::pretty::pretty` | 🟡 Partial | ✅ Yes | Layout parity (Node/expand port) for sequences, maps, pairs/tuples, optionals, scalars; structs & `ReprHighlighter` colors not portable/pending |
 | | `Syntax` highlighting | `rich.syntax` | `rich::highlight::Highlighter` | 🟡 Scaffolded | ❌ No | Interface defined; Tree-sitter or regex highlighter pending |
 | | `Markdown` rendering | `rich.markdown` | `rich::markdown::parse` | 🟡 Scaffolded | ❌ No | Header stub in place; md4c integration pending |
 | | `Traceback` (pretty stack traces) | `rich.traceback` | `rich::traceback::print_current_trace` | 🟡 Scaffolded | ❌ No | Header stub in place; `cpptrace` integration pending |
@@ -41,7 +41,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | Record / Export (Text) | `rich.console` | `Console::export_text` | ✅ Done | ✅ Yes | Records terminal output to buffer |
 | | Export to SVG | `rich.console` | `Console::export_svg` | ✅ Done | ✅ Yes | SVG terminal snapshot (`CONSOLE_SVG_FORMAT` port, `unique_id` from segment-repr adler32) |
 | | Export to HTML | `rich.console` | N/A | ❌ Not Started | ❌ No | Generates HTML snapshots of terminal output |
-| | Automated Oracle test suite | Tests | `src/rich-cpp/tests/verify_oracle.py` | ✅ Done | ✅ Yes | 21/21 exact byte-level parity checks with Python Rich |
+| | Automated Oracle test suite | Tests | `src/rich-cpp/tests/verify_oracle.py` | ✅ Done | ✅ Yes | 25/25 exact byte-level parity checks with Python Rich |
 
 ---
 

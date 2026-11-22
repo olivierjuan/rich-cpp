@@ -1,5 +1,6 @@
 #include "rich_core.h"
 #include "Svg.h"
+#include "Emoji.h"
 #include <sstream>
 #include <cstdlib>
 #ifdef _WIN32
@@ -11,6 +12,10 @@
 #  include <unistd.h>
 #  include <sys/ioctl.h>
 #endif
+
+namespace rich {
+std::string emoji_replace(std::string_view text) { return emoji::replace(text); }
+} // namespace rich
 
 namespace rich {
 
@@ -503,10 +508,10 @@ std::vector<Segment> parse_markup(std::string_view sv) {
 
         size_t next_bracket = sv.find('[', pos);
         if (next_bracket == std::string_view::npos) {
-            segments.push_back({std::string(sv.substr(pos)), style_stack.back()});
+            segments.push_back({emoji_replace(sv.substr(pos)), style_stack.back()});
             break;
         }
-        segments.push_back({std::string(sv.substr(pos, next_bracket - pos)), style_stack.back()});
+        segments.push_back({emoji_replace(sv.substr(pos, next_bracket - pos)), style_stack.back()});
         pos = next_bracket;
     }
     return segments;

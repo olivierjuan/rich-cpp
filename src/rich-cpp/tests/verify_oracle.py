@@ -24,6 +24,10 @@ TEST_CASES = [
     "progress_tracker",
     "progress_speed",
     "export_svg",
+    "emoji_basic",
+    "pretty_list",
+    "pretty_dict",
+    "pretty_scalars",
 ]
 
 import os

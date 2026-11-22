@@ -191,12 +191,18 @@ struct StyledText {
     std::string content;
 };
 RICH_EXPORT std::vector<Segment> parse_markup(std::string_view sv);
+// Emoji shortcode replacement (":smile:" -> UTF-8 emoji), Python Rich
+// _emoji_replace parity. Defined in rich_core.cpp on top of the generated
+// EmojiTable.h (kept out of this header for compile times).
+RICH_EXPORT std::string emoji_replace(std::string_view text);
 inline std::vector<Segment> render_item(const StyledText& t, const Console&, const Options&) {
     // Python parity (markup.render): a string with no '[' becomes
     // Text(text, style="") with no spans → Segment(text) carries style=None,
     // while markup strings render gap pieces with an explicit empty Style().
+    // Emoji shortcodes are replaced in both paths (Python applies
+    // _emoji_replace to each text chunk).
     if (t.content.find('[') == std::string::npos)
-        return {{t.content, detail::kNoneStyle()}};
+        return {{emoji_replace(t.content), detail::kNoneStyle()}};
     return parse_markup(t.content);
 }
 inline std::pair<size_t, size_t> measure_item(const StyledText& t, const Console&, const Options&) {

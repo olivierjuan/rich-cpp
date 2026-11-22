@@ -11,6 +11,7 @@
 #include <Status.h>
 #include <Live.h>
 #include <ProgressTracker.h>
+#include <Pretty.h>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -203,6 +204,53 @@ int main(int argc, char* argv[]) {
         svg_console.print("[bold red]Hello[/] [on blue]colored[/] [reverse]reversed[/] [dim]dim[/] [italic]it[/] [underline]ul[/]");
         svg_console.print("plain");
         std::cout << svg_console.export_svg("Rich");
+        return 0;
+    } else if (test_name == "emoji_basic") {
+        rich::ConsoleOptions e_opts{.width = 80, .record = true, .legacy_windows = false};
+        rich::Console ec(oss, e_opts);
+        ec.print("Hello :smile: and :dog: and :notanemoji:");
+        ec.print("[bold red]:heart:[/] variant :copyright-emoji: :copyright-text:");
+        std::cout << ec.export_text();
+        return 0;
+    } else if (test_name == "pretty_list") {
+        rich::ConsoleOptions p_opts{.width = 80, .record = true, .legacy_windows = false};
+        rich::Console pc(oss, p_opts);
+        pc.print(rich::pretty::pretty(std::vector<int>{1, 2, 3}));
+        pc.print(rich::pretty::pretty(std::vector<std::string>{"apple", "banana"}));
+        pc.print(rich::pretty::pretty(std::vector<int>{}));
+        std::vector<int> longv;
+        for (int i = 15; i < 40; ++i) longv.push_back(i);
+        pc.print(rich::pretty::pretty(longv));
+        std::cout << pc.export_text();
+        return 0;
+    } else if (test_name == "pretty_dict") {
+        rich::ConsoleOptions p_opts{.width = 80, .record = true, .legacy_windows = false};
+        rich::Console pc(oss, p_opts);
+        pc.print(rich::pretty::pretty(std::map<std::string, int>{{"a", 1}, {"b", 2}}));
+        pc.print(rich::pretty::pretty(std::map<std::string, int>{}));
+        std::map<std::string, int> longd;
+        for (int i = 0; i < 12; ++i) longd["key" + std::to_string(i / 10) + std::to_string(i % 10)] = i;
+        pc.print(rich::pretty::pretty(longd));
+        pc.print(rich::pretty::pretty(std::map<std::string, std::vector<int>>{
+            {"nums", {1, 2}}, {"other", {3, 4}}}));
+        std::vector<int> longv;
+        for (int i = 15; i < 40; ++i) longv.push_back(i);
+        pc.print(rich::pretty::pretty(std::map<std::string, std::vector<int>>{
+            {"nums", longv}, {"other", {1}}}));
+        std::cout << pc.export_text();
+        return 0;
+    } else if (test_name == "pretty_scalars") {
+        rich::ConsoleOptions p_opts{.width = 80, .record = true, .legacy_windows = false};
+        rich::Console pc(oss, p_opts);
+        pc.print(rich::pretty::pretty(42));
+        pc.print(rich::pretty::pretty(1.5));
+        pc.print(rich::pretty::pretty(true));
+        pc.print(rich::pretty::pretty(nullptr));
+        pc.print(rich::pretty::pretty(std::make_tuple(1, "two")));
+        pc.print(rich::pretty::pretty(std::tuple<int>(42)));
+        pc.print(rich::pretty::pretty(std::vector<std::optional<int>>{
+            std::nullopt, 1, std::nullopt}));
+        std::cout << pc.export_text();
         return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
