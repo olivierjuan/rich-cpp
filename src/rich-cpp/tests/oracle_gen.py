@@ -348,6 +348,30 @@ def generate_python_oracle(test_name: str) -> str:
         c2.log("[red]hello[/] world")
         c2.log("again")
         return sink2.getvalue()
+    elif test_name == "theme_push":
+        # Theme system: default theme (log.time = dim cyan, rule.line =
+        # bright green); push_theme (inherit) overlays names on the stack
+        # top; pop_theme restores. get_datetime advances one second per
+        # call so omit_repeated_times does not blank the styled time column.
+        from datetime import datetime, timedelta
+        from rich.theme import Theme
+        tick = [datetime(2026, 7, 22, 21, 53, 32)]
+        def dt():
+            tick[0] += timedelta(seconds=1)
+            return tick[0]
+        sink2 = io.StringIO()
+        c2 = Console(file=sink2, width=60, height=25, force_terminal=True,
+                     color_system="truecolor", no_color=False, log_path=False,
+                     legacy_windows=False, get_datetime=dt)
+        c2.log("default")
+        c2.rule("sep")
+        c2.push_theme(Theme({"log.time": "bold red", "rule.line": "bright_blue"}))
+        c2.log("themed")
+        c2.rule("sep")
+        c2.pop_theme()
+        c2.log("restored")
+        c2.rule("sep")
+        return sink2.getvalue()
     return c.export_text()
 
 def main():

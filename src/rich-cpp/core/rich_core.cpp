@@ -433,21 +433,6 @@ void Console::print(const AnyRenderable& ar) {
 }
 
 namespace {
-// Python default theme: log.time = cyan dim; log.path = dim.
-Style log_time_style() {
-    Style s;
-    s.dim = true;
-    s.explicit_bits = 0x0002;
-    s.color = Color::from_ansi(36);
-    return s;
-}
-Style log_path_style() {
-    Style s;
-    s.dim = true;
-    s.explicit_bits = 0x0002;
-    return s;
-}
-
 // Split a flat segment stream into physical lines at '\n'.
 std::vector<std::vector<Segment>> split_physical_lines(std::vector<Segment> segs) {
     std::vector<std::vector<Segment>> lines;
@@ -549,8 +534,8 @@ void Console::log(std::initializer_list<std::string_view> objects, LogOptions op
     if (N > W) N = W;
 
     const auto physical = split_physical_lines(std::move(msg_segs));
-    const Style time_style = log_time_style();
-    const Style path_style = log_path_style();
+    const Style time_style = get_style("log.time");
+    const Style path_style = get_style("log.path");
 
     // Table.grid(padding=(0,1)) layout, one grid row per physical message
     // line: [time cell][1][message cell (fold, padded to N)][1][path cell].
@@ -934,7 +919,7 @@ std::vector<Segment> render_item(const Rule& r, const Console& c, const Options&
     size_t target_width = (r.width > 0) ? r.width : ((opt.width > 0) ? opt.width : 80);
     std::vector<Segment> out;
     // Python Rule default style="rule.line" -> bright_green; title style="rule.text" -> Style.null().
-    Style dash_style{.color = Color::from_ansi(92)};
+    const Style dash_style = c.get_style("rule.line");
 
     if (r.title.empty()) {
         out.push_back({repeat_utf8_core("─", target_width) + "\n", dash_style});
@@ -1119,6 +1104,287 @@ std::string_view next_tag_word(std::string_view tag, size_t& tstart) {
     }
     return word;
 }
+} // namespace
+
+// =====================================================================
+// Theme system (rich.theme + rich.default_styles)
+// =====================================================================
+
+// Python Style.parse on a full definition: whitespace-separated words, each
+// applied in order; "on <color>" counts as one spec (background).
+Style parse_style_def(std::string_view definition) {
+    Style out;
+    size_t pos = 0;
+    auto next_word = [&definition, &pos](std::string_view& word) {
+        while (pos < definition.size() && (definition[pos] == ' ' || definition[pos] == '\t'))
+            pos++;
+        if (pos >= definition.size()) { word = std::string_view(); return; }
+        size_t end = pos;
+        while (end < definition.size() && definition[end] != ' ' && definition[end] != '\t')
+            end++;
+        word = definition.substr(pos, end - pos);
+        pos = end;
+    };
+    std::string_view word;
+    while (next_word(word), !word.empty()) {
+        if (word == "on") {
+            std::string_view color;
+            next_word(color);
+            if (color.empty())
+                throw std::invalid_argument("style: 'on' without a color");
+            if (!apply_tag("on " + std::string(color), out))
+                throw std::invalid_argument(std::string("style: unknown color '") +
+                                            std::string(color) + "'");
+            continue;
+        }
+        if (!apply_tag(word, out))
+            throw std::invalid_argument(std::string("style: unknown style word '") +
+                                        std::string(word) + "'");
+    }
+    return out;
+}
+
+const std::map<std::string, Style>& default_styles() {
+    // Entry builder: `on_bits` = attribute bits set to True, `off_bits` =
+    // additional bits explicitly set (to False) in Python's constructor —
+    // tracked via Style.explicit_bits, invisible to SGR emission.
+    auto mk = [](uint16_t on_bits, uint16_t off_bits = 0,
+                 Color fg = Color{}, Color bg = Color{}) {
+        Style s;
+        s.explicit_bits = static_cast<uint16_t>(on_bits | off_bits);
+        s.bold = (on_bits & 0x0001) != 0;
+        s.dim = (on_bits & 0x0002) != 0;
+        s.italic = (on_bits & 0x0004) != 0;
+        s.underline = (on_bits & 0x0008) != 0;
+        s.reverse = (on_bits & 0x0010) != 0;
+        s.strike = (on_bits & 0x0020) != 0;
+        s.blink = (on_bits & 0x0040) != 0;
+        s.blink2 = (on_bits & 0x0080) != 0;
+        s.conceal = (on_bits & 0x0100) != 0;
+        s.underline2 = (on_bits & 0x0200) != 0;
+        s.frame = (on_bits & 0x0400) != 0;
+        s.encircle = (on_bits & 0x0800) != 0;
+        s.overline = (on_bits & 0x1000) != 0;
+        s.color = fg;
+        s.bg_color = bg;
+        return s;
+    };
+    const Color black = Color::from_ansi(30), red = Color::from_ansi(31);
+    const Color green = Color::from_ansi(32), yellow = Color::from_ansi(33);
+    const Color blue = Color::from_ansi(34), magenta = Color::from_ansi(35);
+    const Color cyan = Color::from_ansi(36), white = Color::from_ansi(37);
+    const Color bred = Color::from_ansi(91), bgreen = Color::from_ansi(92);
+    const Color byellow = Color::from_ansi(93), bblue = Color::from_ansi(94);
+    const Color bmagenta = Color::from_ansi(95), bcyan = Color::from_ansi(96);
+    static const std::map<std::string, Style> styles = {
+        {"none", mk(0)},
+        {"reset", mk(0, 0x01FF, Color::dflt(), Color::dflt())},
+        {"dim", mk(0x0002)},
+        {"bright", mk(0, 0x0002)},  // Style(dim=False)
+        {"bold", mk(0x0001)},
+        {"strong", mk(0x0001)},
+        {"code", mk(0x0011)},
+        {"italic", mk(0x0004)},
+        {"emphasize", mk(0x0004)},
+        {"underline", mk(0x0008)},
+        {"blink", mk(0x0040)},
+        {"blink2", mk(0x0080)},
+        {"reverse", mk(0x0010)},
+        {"strike", mk(0x0020)},
+        {"black", mk(0, 0, black)},
+        {"red", mk(0, 0, red)},
+        {"green", mk(0, 0, green)},
+        {"yellow", mk(0, 0, yellow)},
+        {"magenta", mk(0, 0, magenta)},
+        {"cyan", mk(0, 0, cyan)},
+        {"white", mk(0, 0, white)},
+        {"inspect.attr", mk(0x0004, 0, yellow)},
+        {"inspect.attr.dunder", mk(0x0004, 0x0002, yellow)},
+        {"inspect.callable", mk(0x0001, 0, red)},
+        {"inspect.async_def", mk(0x0004, 0, bcyan)},
+        {"inspect.def", mk(0x0004, 0, bcyan)},
+        {"inspect.class", mk(0x0004, 0, bcyan)},
+        {"inspect.error", mk(0x0001, 0, red)},
+        {"inspect.equals", mk(0)},
+        {"inspect.help", mk(0, 0, cyan)},
+        {"inspect.doc", mk(0x0002)},
+        {"inspect.value.border", mk(0, 0, green)},
+        {"live.ellipsis", mk(0x0001, 0, red)},
+        {"layout.tree.row", mk(0, 0x0002, red)},
+        {"layout.tree.column", mk(0, 0x0002, blue)},
+        {"logging.keyword", mk(0x0001, 0, yellow)},
+        {"logging.level.notset", mk(0x0002)},
+        {"logging.level.debug", mk(0, 0, green)},
+        {"logging.level.info", mk(0, 0, blue)},
+        {"logging.level.warning", mk(0, 0, yellow)},
+        {"logging.level.error", mk(0x0001, 0, red)},
+        {"logging.level.critical", mk(0x0011, 0, red)},
+        {"log.level", mk(0)},
+        {"log.time", mk(0x0002, 0, cyan)},
+        {"log.message", mk(0)},
+        {"log.path", mk(0x0002)},
+        {"repr.ellipsis", mk(0, 0, yellow)},
+        {"repr.indent", mk(0x0002, 0, green)},
+        {"repr.error", mk(0x0001, 0, red)},
+        {"repr.str", mk(0, 0x0006, green)},
+        {"repr.brace", mk(0x0001)},
+        {"repr.comma", mk(0x0001)},
+        {"repr.ipv4", mk(0x0001, 0, bgreen)},
+        {"repr.ipv6", mk(0x0001, 0, bgreen)},
+        {"repr.eui48", mk(0x0001, 0, bgreen)},
+        {"repr.eui64", mk(0x0001, 0, bgreen)},
+        {"repr.tag_start", mk(0x0001)},
+        {"repr.tag_name", mk(0x0001, 0, bmagenta)},
+        {"repr.tag_contents", mk(0, 0, Color::dflt())},
+        {"repr.tag_end", mk(0x0001)},
+        {"repr.attrib_name", mk(0, 0x0004, yellow)},
+        {"repr.attrib_equal", mk(0x0001)},
+        {"repr.attrib_value", mk(0, 0x0004, magenta)},
+        {"repr.number", mk(0x0001, 0x0004, cyan)},
+        {"repr.number_complex", mk(0x0001, 0x0004, cyan)},
+        {"repr.bool_true", mk(0x0004, 0, bgreen)},
+        {"repr.bool_false", mk(0x0004, 0, bred)},
+        {"repr.none", mk(0x0004, 0, magenta)},
+        {"repr.url", mk(0x0008, 0x0005, bblue)},
+        {"repr.uuid", mk(0, 0x0001, byellow)},
+        {"repr.call", mk(0x0001, 0, magenta)},
+        {"repr.path", mk(0, 0, magenta)},
+        {"repr.filename", mk(0, 0, bmagenta)},
+        {"rule.line", mk(0, 0, bgreen)},
+        {"rule.text", mk(0)},
+        {"json.brace", mk(0x0001)},
+        {"json.bool_true", mk(0x0004, 0, bgreen)},
+        {"json.bool_false", mk(0x0004, 0, bred)},
+        {"json.null", mk(0x0004, 0, magenta)},
+        {"json.number", mk(0x0001, 0x0004, cyan)},
+        {"json.str", mk(0, 0x0006, green)},
+        {"json.key", mk(0x0001, 0, blue)},
+        {"prompt", mk(0)},
+        {"prompt.choices", mk(0x0001, 0, magenta)},
+        {"prompt.default", mk(0x0001, 0, cyan)},
+        {"prompt.invalid", mk(0, 0, red)},
+        {"prompt.invalid.choice", mk(0, 0, red)},
+        {"pretty", mk(0)},
+        {"scope.border", mk(0, 0, blue)},
+        {"scope.key", mk(0x0004, 0, yellow)},
+        {"scope.key.special", mk(0x0004, 0x0002, yellow)},
+        {"scope.equals", mk(0, 0, red)},
+        {"table.header", mk(0x0001)},
+        {"table.footer", mk(0x0001)},
+        {"table.cell", mk(0)},
+        {"table.title", mk(0x0004)},
+        {"table.caption", mk(0x0004, 0x0002)},
+        {"traceback.error", mk(0x0004, 0, red)},
+        {"traceback.border.syntax_error", mk(0, 0, bred)},
+        {"traceback.border", mk(0, 0, red)},
+        {"traceback.text", mk(0)},
+        {"traceback.title", mk(0x0001, 0, red)},
+        {"traceback.exc_type", mk(0x0001, 0, bred)},
+        {"traceback.exc_value", mk(0)},
+        {"traceback.offset", mk(0x0001, 0, bred)},
+        {"traceback.error_range", mk(0x0009)},
+        {"traceback.note", mk(0x0001, 0, green)},
+        {"traceback.group.border", mk(0, 0, magenta)},
+        // Python Color.parse("grey23") = 8-bit gray ramp index 237.
+        {"bar.back", mk(0, 0, Color::charcoal(237))},
+        {"bar.complete", mk(0, 0, Color::rgb(249, 38, 114))},
+        {"bar.finished", mk(0, 0, Color::rgb(114, 156, 31))},
+        {"bar.pulse", mk(0, 0, Color::rgb(249, 38, 114))},
+        {"progress.description", mk(0)},
+        {"progress.filesize", mk(0, 0, green)},
+        {"progress.filesize.total", mk(0, 0, green)},
+        {"progress.download", mk(0, 0, green)},
+        {"progress.elapsed", mk(0, 0, yellow)},
+        {"progress.percentage", mk(0, 0, magenta)},
+        {"progress.remaining", mk(0, 0, cyan)},
+        {"progress.data.speed", mk(0, 0, red)},
+        {"progress.spinner", mk(0, 0, green)},
+        {"status.spinner", mk(0, 0, green)},
+        {"tree", mk(0)},
+        {"tree.line", mk(0)},
+        {"markdown.paragraph", mk(0)},
+        {"markdown.text", mk(0)},
+        {"markdown.em", mk(0x0004)},
+        {"markdown.emph", mk(0x0004)},
+        {"markdown.strong", mk(0x0001)},
+        {"markdown.code", mk(0x0001, 0, cyan, black)},
+        {"markdown.code_block", mk(0, 0, cyan, black)},
+        {"markdown.block_quote", mk(0, 0, magenta)},
+        {"markdown.list", mk(0, 0, cyan)},
+        {"markdown.item", mk(0)},
+        {"markdown.item.bullet", mk(0x0001)},
+        {"markdown.item.number", mk(0, 0, cyan)},
+        {"markdown.hr", mk(0x0002)},
+        {"markdown.h1.border", mk(0)},
+        {"markdown.h1", mk(0x0009)},
+        {"markdown.h2", mk(0x0008, 0, magenta)},
+        {"markdown.h3", mk(0x0001, 0, magenta)},
+        {"markdown.h4", mk(0x0004, 0, magenta)},
+        {"markdown.h5", mk(0x0004)},
+        {"markdown.h6", mk(0x0002)},
+        {"markdown.h7", mk(0x0006)},
+        {"markdown.link", mk(0, 0, bblue)},
+        {"markdown.link_url", mk(0x0008, 0, blue)},
+        {"markdown.s", mk(0x0020)},
+        {"markdown.table.border", mk(0, 0, cyan)},
+        {"markdown.table.header", mk(0, 0x0001, cyan)},
+        {"markdown.kbd", mk(0x0001, 0, byellow)},
+        {"iso8601.date", mk(0, 0, blue)},
+        {"iso8601.time", mk(0, 0, magenta)},
+        {"iso8601.timezone", mk(0, 0, yellow)},
+    };
+    return styles;
+}
+
+std::string Theme::config() const {
+    std::string out = "[styles]\n";
+    bool first = true;
+    for (const auto& [name, style] : styles_) {
+        if (!first) out += "\n";
+        first = false;
+        out += name;
+        out += " = ";
+        out += svg::py_repr_style(style);
+    }
+    return out;
+}
+
+Style Console::get_style(std::string_view name, std::string_view default_name) const {
+    auto it = theme_stack_.back().find(std::string(name));
+    if (it != theme_stack_.back().end())
+        return it->second;
+    try {
+        return parse_style_def(name);
+    } catch (const std::invalid_argument&) {
+        if (default_name.empty())
+            throw std::runtime_error("no style defined for '" + std::string(name) + "'");
+        return get_style(default_name, "");
+    }
+}
+
+void Console::push_theme(const Theme& theme, bool inherit) {
+    std::map<std::string, Style> entry =
+        inherit ? theme_stack_.back() : std::map<std::string, Style>{};
+    for (const auto& [k, v] : theme.styles()) entry[k] = v;
+    theme_stack_.push_back(std::move(entry));
+}
+
+void Console::pop_theme() {
+    if (theme_stack_.size() <= 1)
+        throw std::runtime_error("unable to pop base theme");
+    theme_stack_.pop_back();
+}
+
+ThemeScope Console::use_theme(const Theme& theme, bool inherit) {
+    push_theme(theme, inherit);
+    return ThemeScope(*this);
+}
+
+ThemeScope::~ThemeScope() {
+    if (console_ != nullptr) console_->pop_theme();
+}
+
+namespace {
 
 // Python rich.markup grammar (RE_TAGS = ((\\*)\[([a-z#/@][^[]*?)])]):
 //   - A tag is: optional backslashes, '[', a FIRST character in [a-z#/@],

@@ -43,6 +43,7 @@ TEST_CASES = [
     "style_sgr_256",
     "log_basic",
     "log_sgr",
+    "theme_push",
 ]
 
 import os

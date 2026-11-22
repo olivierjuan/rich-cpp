@@ -5,6 +5,7 @@
 #include <vector>
 #include <type_traits>
 #include <concepts>
+#include <map>
 #include <iosfwd>
 #include <memory>
 #include <iostream>
@@ -208,6 +209,10 @@ private:
 // (NO_COLOR mode): colors dropped, attributes kept. Empty string = nothing.
 RICH_EXPORT std::string style_sgr(const Style& s, ColorSystem system,
                                   bool strip_color = false);
+// Python Style.parse: a full style definition — space-separated words
+// (attribute words + aliases, colors, `on <color>` backgrounds). An
+// unrecognized word throws std::invalid_argument (Python: StyleSyntaxError).
+RICH_EXPORT Style parse_style_def(std::string_view definition);
 
 struct ConsoleOptions {
     size_t width{80};
@@ -236,10 +241,57 @@ struct LogOptions {
     bool omit_repeated_times{true};  // same formatted time -> blanked column
 };
 
+// Port of rich.default_styles.DEFAULT_STYLES (style names referenced by
+// Console.log, Rule, Table, Panel, ...).
+RICH_EXPORT const std::map<std::string, Style>& default_styles();
+
+// Python rich.theme.Theme: a name -> Style mapping. `inherit=true` (default)
+// seeds the map from DEFAULT_STYLES (port of rich.default_styles) before
+// applying user definitions.
+class RICH_EXPORT Theme {
+public:
+    Theme() : styles_(default_styles()) {}
+    explicit Theme(bool inherit) : styles_(inherit ? default_styles() : std::map<std::string, Style>{}) {}
+    // String definitions are parsed like style definitions (words such as
+    // "bold red", "rgb(249,38,114)", "on blue"); an unparseable definition
+    // throws std::invalid_argument (Python: StyleSyntaxError).
+    Theme(const std::map<std::string, std::string>& definitions, bool inherit = true)
+        : styles_(inherit ? default_styles() : std::map<std::string, Style>{}) {
+        for (const auto& [name, def] : definitions)
+            styles_[name] = parse_style_def(def);
+    }
+    const Style* find(std::string_view name) const {
+        auto it = styles_.find(std::string(name));
+        return it == styles_.end() ? nullptr : &it->second;
+    }
+    const std::map<std::string, Style>& styles() const noexcept { return styles_; }
+    // Python Theme.config: an INI "[styles]" section, sorted, "name = <Style repr>".
+    std::string config() const;
+private:
+    std::map<std::string, Style> styles_;
+};
+
+class Console;
+
+// RAII scope for Console::use_theme (Python's context manager): pushes the
+// theme on construction, pops it on destruction.
+class RICH_EXPORT ThemeScope {
+public:
+    ThemeScope(ThemeScope&&) noexcept = default;
+    ThemeScope& operator=(ThemeScope&&) noexcept = default;
+    ThemeScope(const ThemeScope&) = delete;
+    ThemeScope& operator=(const ThemeScope&) = delete;
+    ~ThemeScope();
+private:
+    friend class Console;
+    explicit ThemeScope(Console& c) : console_(&c) {}
+    Console* console_;
+};
+
 class RICH_EXPORT Console {
 public:
     explicit Console(std::ostream& os = std::cout, ConsoleOptions options = {}) noexcept
-        : os_(os), options_(options) {}
+        : os_(os), options_(options), theme_stack_{default_styles()} {}
 
     void print(const AnyRenderable& ar);
     void print(std::string_view markup_text);
@@ -248,6 +300,18 @@ public:
     // styled log.time (dim cyan), path styled log.path (dim), message
     // overflow=fold at the available width; repeated times are blanked.
     void log(std::initializer_list<std::string_view> objects, LogOptions opts = {});
+
+    // Python Console.get_style: the top theme entry wins; a miss falls back
+    // to parsing `name` as a style definition, then to `default` (resolved
+    // the same way, recursively). Nothing matches -> std::runtime_error
+    // (Python: MissingStyle). Empty name yields the empty style.
+    Style get_style(std::string_view name, std::string_view default_name = "") const;
+    // Python Console.push_theme: the new entry is {current, **theme} when
+    // inherit, else a copy of the theme. pop_theme removes the top entry;
+    // popping the base theme throws std::runtime_error (ThemeStackError).
+    void push_theme(const Theme& theme, bool inherit = true);
+    void pop_theme();
+    ThemeScope use_theme(const Theme& theme, bool inherit = true);
 
     // Write raw bytes (VT escapes, etc.) directly to the underlying stream.
     // Not recorded in export_text(); intended for live animation only.
@@ -300,6 +364,9 @@ private:
     std::string record_buffer_;
     std::vector<Segment> record_segments_;
     std::string last_log_time_;  // omit_repeated_times state (per instance)
+    // Python Console._thread_locals.theme_stack: base entry = Theme()
+    // (DEFAULT_STYLES); push_theme appends merged entries, get reads the top.
+    std::vector<std::map<std::string, Style>> theme_stack_;
 };
 
 // Core types above are complete here. The wrapping engine (Text.h) needs

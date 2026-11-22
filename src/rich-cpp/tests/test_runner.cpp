@@ -520,6 +520,33 @@ int main(int argc, char* argv[]) {
         lc.log({std::string_view("again")}, lo());
         std::cout << l_oss.str();
         return 0;
+    } else if (test_name == "theme_push") {
+        rich::ConsoleOptions l_opts{.width = 60, .height = 25, .record = false,
+                                    .legacy_windows = false,
+                                    .force_terminal = true,
+                                    .color_system = rich::ColorSystem::Truecolor,
+                                    .no_color = false};
+        std::ostringstream l_oss;
+        rich::Console lc(l_oss, l_opts);
+        std::tm t{};
+        t.tm_hour = 21; t.tm_min = 53; t.tm_sec = 32;
+        auto lo = [&t] {
+            t.tm_sec += 1;
+            rich::LogOptions o;
+            o.time = t;
+            return o;
+        };
+        lc.log({std::string_view("default")}, lo());
+        lc.rule("sep");
+        lc.push_theme(rich::Theme({{"log.time", "bold red"},
+                                   {"rule.line", "bright_blue"}}));
+        lc.log({std::string_view("themed")}, lo());
+        lc.rule("sep");
+        lc.pop_theme();
+        lc.log({std::string_view("restored")}, lo());
+        lc.rule("sep");
+        std::cout << l_oss.str();
+        return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
         return 1;
