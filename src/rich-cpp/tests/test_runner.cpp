@@ -102,6 +102,19 @@ int main(int argc, char* argv[]) {
         small_console.print(rich::AnyRenderable(rich::text::Text(content)));
         std::cout << small_console.export_text();
         return 0;
+    } else if (test_name == "text_wrap_emoji") {
+        rich::ConsoleOptions small_opts{.width = 20, .record = true, .legacy_windows = false};
+        std::ostringstream small_oss;
+        rich::Console small_console(small_oss, small_opts);
+        std::string smiley = "\xF0\x9F\x98\x80"; // 😀
+        std::string flag = "\xF0\x9F\x87\xAB\xF0\x9F\x87\xB7"; // 🇫🇷
+        std::string content = "a ";
+        for (int k = 0; k < 15; ++k) content += smiley;
+        content += " b ";
+        for (int k = 0; k < 4; ++k) content += flag;
+        small_console.print(rich::AnyRenderable(rich::text::Text(content)));
+        std::cout << small_console.export_text();
+        return 0;
     } else if (test_name == "tree_basic") {
         rich::tree::Tree t("Root");
         t.add("Child 1");

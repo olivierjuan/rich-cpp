@@ -13,7 +13,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | Fluent / Pipe syntax | N/A (Python decorators) | `operator\|` | ✅ Done | ✅ Yes | `content \| pad(1) \| panel({...})` |
 | **Markup & Text** | Inline markup `[bold red]...[/]` | `rich.markup` | `rich::parse_markup`, `StyledText` | ✅ Done | ✅ Yes | Tag nesting, `[/]` closing, bracket escaping `[[`, `on <color>` backgrounds |
 | | Text formatting & wrapping | `rich.text` | `rich::text::Text` | ✅ Done | ✅ Yes | Soft word wrapping matching Python Rich output |
-| | Unicode Cell Width Calculation | `rich.cells` | `cell_width` / `visual_width` | 🟡 Partial | ✅ Yes | Multi-byte UTF-8 width (1 vs 2 cols) + East Asian width tables; oracle `text_wrap_cjk` |
+| | Unicode Cell Width Calculation | `rich.cells` | `cell_width` / `visual_width` | ✅ Done | ✅ Yes | Generated East-Asian width table + ZWJ/VS16 handling (`CellTable.h`); oracles `text_wrap_cjk`, `text_wrap_emoji` |
 | | Emoji codes `:smile:` | `rich.emoji` | `rich::emoji_replace` | ✅ Done | ✅ Yes | Python-parity `:name:` table (3608 codes, generated `EmojiTable.h`), `-emoji`/`-text` variants, unknown codes verbatim |
 | **Layout & Containers** | `Panel` | `rich.panel` | `rich::panel::Panel` | ✅ Done | ✅ Yes | Centered titles, borders, multiline support, custom box styles |
 | | `Padding` | `rich.padding` | `rich::decorator::Padding` | ✅ Done | ✅ Yes | Top/bottom and left/right padding decorator |
@@ -41,7 +41,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | Record / Export (Text) | `rich.console` | `Console::export_text` | ✅ Done | ✅ Yes | Records terminal output to buffer |
 | | Export to SVG | `rich.console` | `Console::export_svg` | ✅ Done | ✅ Yes | SVG terminal snapshot (`CONSOLE_SVG_FORMAT` port, `unique_id` from segment-repr adler32) |
 | | Export to HTML | `rich.console` | `Console::export_html` | ✅ Done | ✅ Yes | HTML terminal snapshot (`DEFAULT_TERMINAL_THEME`, class-based CSS); oracle `export_html` |
-| | Automated Oracle test suite | Tests | `src/rich-cpp/tests/verify_oracle.py` | ✅ Done | ✅ Yes | 32/32 exact byte-level parity checks with Python Rich |
+| | Automated Oracle test suite | Tests | `src/rich-cpp/tests/verify_oracle.py` | ✅ Done | ✅ Yes | 33/33 exact byte-level parity checks with Python Rich |
 
 ---
 

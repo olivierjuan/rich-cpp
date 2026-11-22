@@ -13,6 +13,7 @@ TEST_CASES = [
     "box_ascii",
     "text_wrap",
     "text_wrap_cjk",
+    "text_wrap_emoji",
     "tree_basic",
     "align_center",
     "align_right",

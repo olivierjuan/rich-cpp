@@ -46,6 +46,12 @@ def generate_python_oracle(test_name: str) -> str:
         c_small = Console(file=sink, width=20, record=True, legacy_windows=False)
         c_small.print("漢字" * 10 + " abc def")
         return c_small.export_text()
+    elif test_name == "text_wrap_emoji":
+        # Wide emoji (2 cells) + regional-indicator flags (1 cell each)
+        # exercising the generated East-Asian width table.
+        c_small = Console(file=sink, width=20, record=True, legacy_windows=False)
+        c_small.print("a " + "😀" * 15 + " b " + "🇫🇷" * 4)
+        return c_small.export_text()
     elif test_name == "tree_basic":
         t = Tree("Root")
         t.add("Child 1")
