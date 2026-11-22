@@ -36,6 +36,9 @@ TEST_CASES = [
     "syntax_basic",
     "markdown_basic",
     "progress_bar_basic",
+    "markup_basic",
+    "padding_basic",
+    "track_basic",
 ]
 
 import os

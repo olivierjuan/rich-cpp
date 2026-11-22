@@ -270,6 +270,24 @@ def generate_python_oracle(test_name: str) -> str:
         for done in (0, 25, 50, 75, 100):
             c2.print(bar(done))
         return c2.export_text()
+    elif test_name == "markup_basic":
+        c2 = Console(file=sink, width=60, record=True, legacy_windows=False)
+        c2.print("[b]B[/b] [i]I[/i] [u red]U[/] [on yellow]Y[/] [b]n[bold]ested[/][/b] [[bracket]]")
+        return c2.export_text()
+    elif test_name == "padding_basic":
+        from rich.padding import Padding
+        c2 = Console(file=sink, width=40, record=True, legacy_windows=False)
+        c2.print(Padding(Text("line one here\nline two here"), pad=2))
+        c2.print(Padding(Text("pipe line\nsecond line"), pad=1))
+        return c2.export_text()
+    elif test_name == "track_basic":
+        from rich.progress import Progress
+        prog = Progress(console=c, auto_refresh=False, get_time=lambda: 100.0)
+        with prog:
+            t = prog.add_task("Processing", total=8)
+            for _ in range(8):
+                prog.advance(t)
+        return c.export_text()
     return c.export_text()
 
 def main():

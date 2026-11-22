@@ -2,6 +2,7 @@
 #include <box.h>
 #include <Text.h>
 #include <panel/Panel.h>
+#include <panel/Padding.h>
 #include <panel/Table.h>
 #include <panel/Columns.h>
 #include <panel/Tree.h>
@@ -11,6 +12,7 @@
 #include <Status.h>
 #include <Live.h>
 #include <ProgressTracker.h>
+#include <Track.h>
 #include <Pretty.h>
 #include <json/Json.h>
 #include <ProgressBar.h>
@@ -407,6 +409,34 @@ int main(int argc, char* argv[]) {
             pc.print(rich::AnyRenderable(bar));
         }
         std::cout << pc.export_text();
+        return 0;
+    } else if (test_name == "markup_basic") {
+        console.print(std::string(
+            "[b]B[/b] [i]I[/i] [u red]U[/] [on yellow]Y[/] "
+            "[b]n[bold]ested[/][/b] [[bracket]]"));
+        std::cout << console.export_text();
+        return 0;
+    } else if (test_name == "padding_basic") {
+        rich::ConsoleOptions p_opts{.width = 40, .record = true, .legacy_windows = false};
+        std::ostringstream p_oss;
+        rich::Console pc(p_oss, p_opts);
+        // pad() factory ...
+        pc.print(rich::decorator::pad(2)(
+            rich::AnyRenderable(rich::text::Text("line one here\nline two here"))));
+        // ... and pipe syntax
+        pc.print(rich::AnyRenderable(rich::text::Text("pipe line\nsecond line")) |
+                 rich::decorator::pad(1));
+        std::cout << pc.export_text();
+        return 0;
+    } else if (test_name == "track_basic") {
+        // track() ticks one step per element; a fully iterated range leaves
+        // the task finished, so the frozen-clock render is byte-stable.
+        rich::progress::ProgressTracker tracker;
+        const std::chrono::nanoseconds t0{0};
+        std::vector<int> items(8);
+        for (auto& x : rich::progress::track(tracker, "Processing")(items)) x = 1;
+        auto segs = tracker.render(console, rich::Options{.width = 60}, t0);
+        for (const auto& s : segs) std::cout << s.text;
         return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";

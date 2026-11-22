@@ -635,71 +635,141 @@ std::string_view next_tag_word(std::string_view tag, size_t& tstart) {
     return word;
 }
 
-bool is_known_tag(std::string_view tag) {
-    if (tag == "/" || tag == "/all") return true;
-    if (!tag.empty() && tag[0] == '/') return true;
-    Style dummy;
+// Python rich.markup grammar (RE_TAGS = ((\\*)\[([a-z#/@][^[]*?)])]):
+//   - A tag is: optional backslashes, '[', a FIRST character in [a-z#/@],
+//     lazy content (no '['), ']'. A '[' that does not begin such a tag is a
+//     literal bracket; ']' outside a tag is literal. (So "[[x]" yields a
+//     literal first '[' plus tag "[x]" — there is no "[[" escape token.)
+//   - An odd number of backslashes before a tag escapes it (the whole match
+//     is literal); an even count yields k/2 literal backslashes, then the tag.
+//   - Open tags: unknown names resolve to an EMPTY style — the delimiters are
+//     consumed either way (Python Style.normalize is forgiving).
+//   - Close '[/name]' pops the matching open tag (searched from the top,
+//     aliases canonicalized); '[/]' pops the innermost. Python raises
+//     MarkupError on mismatch/empty stack; this port degrades leniently
+//     (pop one level), which only diverges on inputs Python rejects.
+
+bool is_tag_start(char c) {
+    return (c >= 'a' && c <= 'z') || c == '#' || c == '/' || c == '@';
+}
+
+// Canonical name for close-tag matching: alias words (b/i/u/d) mapped to
+// their full names, words space-joined ("on yellow" stays "on yellow").
+std::string canon_tag_name(std::string_view tag) {
+    std::string out;
     size_t tstart = 0;
-    bool any_known = false;
     while (tstart < tag.size()) {
-        if (apply_tag(next_tag_word(tag, tstart), dummy)) {
-            any_known = true;
-        } else {
-            return false;
-        }
+        std::string_view word = next_tag_word(tag, tstart);
+        std::string w(word);
+        if (w == "b") w = "bold";
+        else if (w == "i") w = "italic";
+        else if (w == "u") w = "underline";
+        else if (w == "d") w = "dim";
+        if (!out.empty()) out += ' ';
+        out += w;
     }
-    return any_known;
+    return out;
 }
 } // namespace
 
 std::vector<Segment> parse_markup(std::string_view sv) {
+    struct Frame { Style style; std::string name; };
     std::vector<Segment> segments;
-    std::vector<Style> style_stack;
-    style_stack.push_back(Style{});
+    std::vector<Frame> stack;
+    stack.push_back({Style{}, ""});
+
+    // True when sv[b] begins a tag (with k backslashes before it at b-k):
+    // tag-start char present, and a closing ']' before any '['.
+    auto tag_bounds = [&](size_t b) -> size_t {
+        // b points at '['
+        if (b + 1 >= sv.size() || !is_tag_start(sv[b + 1])) return std::string_view::npos;
+        const size_t close = sv.find(']', b + 2);
+        const size_t next_open = sv.find('[', b + 2);
+        if (close == std::string_view::npos) return std::string_view::npos;
+        if (next_open != std::string_view::npos && next_open < close)
+            return std::string_view::npos;
+        return close;
+    };
+
+    auto apply_tag_open = [&](std::string_view tag) {
+        Style next_st = stack.back().style;
+        size_t tstart = 0;
+        while (tstart < tag.size()) apply_tag(next_tag_word(tag, tstart), next_st);
+        stack.push_back({next_st, canon_tag_name(tag)});
+    };
+    auto apply_tag_close = [&](std::string_view tag) {
+        std::string_view name = tag.substr(1);
+        const size_t eq = name.find('=');
+        if (eq != std::string_view::npos) name = name.substr(0, eq);
+        // Trim surrounding spaces (Python: style_name.strip()).
+        while (!name.empty() && name.front() == ' ') name.remove_prefix(1);
+        while (!name.empty() && name.back() == ' ') name.remove_suffix(1);
+        if (name.empty()) {
+            if (stack.size() > 1) stack.pop_back();
+            else stack.back().style = Style{};
+            return;
+        }
+        const std::string want = canon_tag_name(name);
+        for (int i = static_cast<int>(stack.size()) - 1; i >= 1; --i) {
+            if (stack[i].name == want) {
+                stack.resize(static_cast<size_t>(i));
+                return;
+            }
+        }
+        if (stack.size() > 1) stack.pop_back();  // lenient fallback
+    };
 
     size_t pos = 0;
     while (pos < sv.size()) {
-        if (sv[pos] == '[') {
-            if (pos + 1 < sv.size() && sv[pos + 1] == '[') {
-                segments.push_back({"[", style_stack.back()});
-                pos += 2;
-                continue;
-            }
-
-            size_t end = sv.find(']', pos);
-            if (end != std::string_view::npos) {
-                std::string_view tag = sv.substr(pos + 1, end - pos - 1);
-                if (is_known_tag(tag)) {
-                    if (tag == "/" || tag == "/all") {
-                        if (style_stack.size() > 1) style_stack.pop_back();
-                        else style_stack.back() = Style{};
-                    } else if (!tag.empty() && tag[0] == '/') {
-                        if (style_stack.size() > 1) style_stack.pop_back();
-                    } else {
-                        Style next_st = style_stack.back();
-                        size_t tstart = 0;
-                        while (tstart < tag.size()) {
-                            apply_tag(next_tag_word(tag, tstart), next_st);
-                        }
-                        style_stack.push_back(next_st);
+        // Literal chunk: run up to the next '[' or a backslash that directly
+        // precedes a '[' (escapes must be decided together with the tag).
+        size_t i = pos;
+        while (i < sv.size() && sv[i] != '[' &&
+               !(sv[i] == '\\' && i + 1 < sv.size() && sv[i + 1] == '['))
+            ++i;
+        if (i == pos) {
+            if (i < sv.size() && sv[i] == '\\') {
+                // Run of k backslashes before '[' at b = i + k.
+                size_t k = 0;
+                while (k < sv.size() - i && sv[i + k] == '\\') ++k;
+                const size_t b = i + k;  // position of '['
+                const size_t close = tag_bounds(b);
+                if (close != std::string_view::npos) {
+                    if (k % 2 == 1) {
+                        // Escaped: the whole match (backslashes + tag) is literal.
+                        segments.push_back(
+                            {emoji_replace(sv.substr(i, close + 1 - i)), stack.back().style});
+                        pos = close + 1;
+                        continue;
                     }
-                    pos = end + 1;
+                    if (k > 0)
+                        segments.push_back({std::string(k / 2, '\\'), stack.back().style});
+                    std::string_view tag = sv.substr(b + 1, close - b - 1);
+                    if (tag[0] == '/') apply_tag_close(tag);
+                    else apply_tag_open(tag);
+                    pos = close + 1;
                     continue;
                 }
+                // Not a tag: backslashes are literal, then handle '['.
+                segments.push_back({std::string(k, '\\'), stack.back().style});
+                pos = b;
+                continue;
             }
-
-            segments.push_back({"[", style_stack.back()});
-            pos += 1;
+            // i at '[' (no preceding backslashes)
+            const size_t close = tag_bounds(i);
+            if (close != std::string_view::npos) {
+                std::string_view tag = sv.substr(i + 1, close - i - 1);
+                if (tag[0] == '/') apply_tag_close(tag);
+                else apply_tag_open(tag);
+                pos = close + 1;
+                continue;
+            }
+            segments.push_back({"[", stack.back().style});
+            ++pos;
             continue;
         }
-
-        size_t next_bracket = sv.find('[', pos);
-        if (next_bracket == std::string_view::npos) {
-            segments.push_back({emoji_replace(sv.substr(pos)), style_stack.back()});
-            break;
-        }
-        segments.push_back({emoji_replace(sv.substr(pos, next_bracket - pos)), style_stack.back()});
-        pos = next_bracket;
+        segments.push_back({emoji_replace(sv.substr(pos, i - pos)), stack.back().style});
+        pos = i;
     }
     return segments;
 }

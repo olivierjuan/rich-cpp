@@ -19,7 +19,7 @@ graph TD
 | **Tier 1** | Core Polish & Text Foundations (Boxes, Wrapping, Terminal Width, NO_COLOR) | 0 (Pure C++20) | ✅ **Completed & Validated (16/16 Oracle)** |
 | **Tier 2** | Advanced Visual Layout (Tree, Align, Constrain, Layout) | 0 (Pure C++20) | ✅ **Completed & Validated (16/16 Oracle)** |
 | **Tier 3** | Dynamic & Live Displays (Progress Bars, Spinners) | 0 (`std::jthread` / VT escapes) | ✅ **Completed & Validated (20/20 Oracle)** |
-| **Tier 4** | Heavy Ecosystem Modules (JSON, Syntax, Markdown, HTML/SVG Export, Traceback) | 0 (Pure C++20 + Win32/DbgHelp) | ✅ **Completed & Validated (33/33 Oracle)** |
+| **Tier 4** | Heavy Ecosystem Modules (JSON, Syntax, Markdown, HTML/SVG Export, Traceback) | 0 (Pure C++20 + Win32/DbgHelp) | ✅ **Completed & Validated (36/36 Oracle)** |
 
 ---
 
@@ -27,11 +27,12 @@ graph TD
 - [x] **Renderable Concept & AnyRenderable**: C++20 ADL customization points (`render_item`, `measure_item`) with value-semantic type erasure.
 - [x] **Core Primitives**: `Segment`, `Style` (16 ANSI colors, bright variants, bold, dim, italic, underline, reverse, RGB), `Color`.
 - [x] **Console**: `Console::print`, `Console::rule`, `Console::export_text`, record mode buffer, automatic Windows `CP_UTF8` and VT processing initialization.
+- [x] **Markup parser**: faithful port of the Python `rich.markup` RE_TAGS grammar — tag = `[` + first char in `[a-z#/@]` + `]`; `\[` escapes; non-tag brackets literal; unknown tags resolve to an empty style; `[/]` / `[/name]` closes with alias canonicalization. Oracle `markup_basic`.
 - [x] **Containers & Decorators**:
   - `Panel` with centered title, custom borders, multiline support.
   - `Table` with multi-column grid, Unicode box drawing, column justification.
   - `Columns` with multi-row wrapping and independent left-aligned lines.
-  - `Padding` with pipe operator (`|`) composition.
+  - `Padding` with pipe operator (`|`) composition — full Python `rich.padding` semantics (full-width top/bottom blanks, per-line left/right padding, inner width expansion); oracle `padding_basic`.
 - [x] **Initial Oracle Validation**: Exact byte-level matches for basic Panel, Table, Rule, and Columns layouts.
 
 ---
@@ -111,6 +112,7 @@ graph TD
   - `track(tracker, "desc")(range)` returns a `TrackRange` that ticks the task on each iteration.
   - Usage: `for (auto& x : track(tracker, "Processing")(items)) { ... }`
   - Verified: 100% / `0:00:00` on full loop; exception-safe mid-loop at 60%.
+  - Oracle test: `track_basic` (frozen-clock render after a fully iterated range, byte-exact).
 
 ### 3.2 Live Display Engine (`rich::live`)
 - [x] In-place screen redraw using VT cursor repositioning escapes (`\x1b[<N>F` move up, `\r\x1b[2K` erase per line).
