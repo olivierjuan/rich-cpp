@@ -1241,6 +1241,56 @@ int main(int argc, char* argv[]) {
         }
         std::cout << t_oss.str();
         return 0;
+    } else if (test_name == "spinner_registry") {
+        // Spinner registry: frame selection math, ctor speed, attached text,
+        // deferred speed update, custom frames/interval — mirrors the Python
+        // oracle (Spinner.render exercised directly).
+        std::ostringstream t_oss;
+        auto show = [&](rich::status::Spinner& sp, double t) {
+            t_oss << sp.render(t) << "\n";
+        };
+
+        rich::status::Spinner sp("dots");
+        sp.render(0.0);
+        show(sp, 0.24);
+        sp = rich::status::Spinner("line");
+        sp.render(0.0);
+        show(sp, 0.39);
+        sp = rich::status::Spinner("dots12");
+        sp.render(0.0);
+        show(sp, 0.80);
+        sp = rich::status::Spinner("weather");
+        sp.render(0.0);
+        show(sp, 0.75);
+        sp = rich::status::Spinner("material");
+        sp.render(0.0);
+        show(sp, 1.68);
+        sp = rich::status::Spinner("point");
+        sp.render(0.0);
+        show(sp, 0.20);
+
+        sp = rich::status::Spinner("dots", std::string(), std::string(), 2.0);
+        sp.render(0.0);
+        show(sp, 0.24);
+
+        sp = rich::status::Spinner("line", "loading...");
+        sp.render(0.0);
+        show(sp, 0.26);
+
+        sp = rich::status::Spinner("dots");
+        sp.render(0.0);
+        sp.set_speed(4.0);
+        show(sp, 0.08);
+        show(sp, 0.16);
+
+        sp = rich::status::Spinner("dots");
+        sp.set_frames({{"a"}, {"b"}, {"c"}}, 100.0);
+        sp.render(0.0);
+        show(sp, 0.1);
+        show(sp, 0.2);
+
+        std::cout << t_oss.str();
+        return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
         return 1;

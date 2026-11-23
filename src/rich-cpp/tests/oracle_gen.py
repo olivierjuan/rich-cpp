@@ -853,6 +853,59 @@ def generate_python_oracle(test_name: str) -> str:
             prog.advance(t2, 8)
 
         return pc.export_text()
+    elif test_name == "spinner_registry":
+        # Spinner registry: frame selection math (start_time fix on first
+        # render -> frame 0; second render at a known delta), ctor speed,
+        # attached text, deferred update(speed), custom frames/interval.
+        # Spinner.render is exercised directly (console.get_time() is
+        # wall-clock and not oracle-able).
+        from rich.spinner import Spinner
+        sink2 = io.StringIO()
+
+        def show(sp, t):
+            sink2.write(sp.render(t).plain + "\n")
+
+        sp = Spinner("dots")
+        sp.render(0.0)
+        show(sp, 0.24)
+        sp = Spinner("line")
+        sp.render(0.0)
+        show(sp, 0.39)
+        sp = Spinner("dots12")
+        sp.render(0.0)
+        show(sp, 0.80)
+        sp = Spinner("weather")
+        sp.render(0.0)
+        show(sp, 0.75)
+        sp = Spinner("material")
+        sp.render(0.0)
+        show(sp, 1.68)
+        sp = Spinner("point")
+        sp.render(0.0)
+        show(sp, 0.20)
+
+        sp = Spinner("dots", speed=2.0)
+        sp.render(0.0)
+        show(sp, 0.24)
+
+        sp = Spinner("line", text="loading...")
+        sp.render(0.0)
+        show(sp, 0.26)
+
+        sp = Spinner("dots")
+        sp.render(0.0)
+        sp.update(speed=4.0)
+        show(sp, 0.08)
+        show(sp, 0.16)
+
+        sp = Spinner("dots")
+        sp.frames = ["a", "b", "c"]
+        sp.interval = 100
+        sp.render(0.0)
+        show(sp, 0.1)
+        show(sp, 0.2)
+
+        return sink2.getvalue()
     return c.export_text()
 
 def main():

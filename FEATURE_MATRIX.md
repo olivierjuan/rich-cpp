@@ -57,7 +57,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | `Traceback` (pretty stack traces) | `rich.traceback` | `rich::traceback::print_current_trace` / `capture_stack` | ✅ Done | 🚫 | Win32 `CaptureStackBackTrace` + psapi module table + DbgHelp symbol names (local PDBs, explicit `SymLoadModule64`); graceful module+offset fallback without symbols; no byte-exact oracle (addresses/symbols nondeterministic) |
 | | `JSON` viewer | `rich.json` | `rich::json::json` | ✅ Done | ✅ Yes | Recursive-descent parser + syntax-colored tree rendering; oracle `json_basic` |
 | | `Progress` custom columns (12 `ProgressColumn` classes), `pulse`, transfer mode | `rich.progress`, `rich.progress_bar` | `rich::progress::Progress` | ✅ Done | ✅ Yes | All column widgets (`SpinnerColumn`, `TextColumn`, `TaskProgressColumn`, `BarColumn`, `TimeElapsedColumn`, `TimeRemainingColumn`, `FileSizeColumn`, `TotalFileSizeColumn`, `MofNCompleteColumn`, `DownloadColumn`, `TransferSpeedColumn`, `RenderableColumn`), indeterminate pulse bar (cosine-blended truecolor, `PULSE_SIZE=20`), transfer-speed display; shared grid engine (`GridTable.h`) with `Columns`; injected clock for byte-stable output. Oracle `progress_extras` (5 sub-cases) |
-| | Spinner registry (73 named animations + custom `Spinner`) | `rich.spinner`, `rich._spinners` | — | ❌ Not Started | ❌ No | `dots2`…`moon`, `tiny`, … + user-defined frames/interval; C++ ships 2 (`dots`, `line`) in `Status.h` |
+| | Spinner registry (73 named animations + custom `Spinner`) | `rich.spinner`, `rich._spinners` | `rich::status::Spinner` | ✅ Done | ✅ Yes | All 73 `SPINNERS` entries verbatim (`SpinnerTable.h`, auto-generated from rich 15.0.0, roundtrip-verified); `Spinner(name, text, style, speed)` with Python frame math (start_time fix, `int(frame_no) % len`, deferred `update(speed)` continuity), custom frames/interval via `set_frames`, unknown name throws (Python: KeyError); `Status` migrated onto the registry. Oracle `spinner_registry` (12 sub-cases) |
 | | `Live` extras: `screen` mode, `vertical`, `refresh_per_second` | `rich.live` | — | ❌ Not Started | ❌ No | Alternate-screen live region; vertical growth; configurable refresh rate |
 | | `Pretty` struct introspection | `rich.pretty` | — | 🚫 Not portable | 🚫 | No `__rich_repr__`-style runtime field introspection in C++; containers/scalars are covered (see Pretty row) |
 | | `Pretty` `ReprHighlighter` coloring | `rich.pretty`, `rich.highlighter` | — | ❌ Not Started | ❌ No | Syntax-colored repr output |
@@ -87,7 +87,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 - 🚫 — oracle impossible: nondeterministic output (Traceback addresses/symbols), live-environment state (terminal size), interactive I/O (`Console.input()`), or not portable to C++. (Wall-clock timestamps are oracle-able via clock injection — see `Console.log()`.)
 
 ### Coverage summary
-- **55 oracle cases** (55/55 byte-exact) cover every deterministic ✅ row.
-- **6 rows ❌ Not Started** — portable but not implemented (largest: spinner registry, Syntax lexer/theme breadth).
+- **56 oracle cases** (56/56 byte-exact) cover every deterministic ✅ row.
+- **5 rows ❌ Not Started** — portable but not implemented (largest: Live extras, Syntax lexer/theme breadth).
 - **5 rows 🚫** (Status) — `scope()`, self-diagnostics/inspection, Jupyter/IPython, `logging` handler, `Pretty` struct introspection.
 - **8 rows 🚫** (Oracle column) — Traceback, terminal-size detection, `Console.input()`, + the 5 not-portable rows: byte-exact verification not possible.

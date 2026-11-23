@@ -566,14 +566,14 @@ public:
     SpinnerColumn(std::string spinner_name = "dots",
                   std::string style = "progress.spinner", double speed = 1.0,
                   std::string finished_text = " ")
-        : spinner_(std::move(spinner_name), style, speed), style_(std::move(style)),
-          finished_(std::move(finished_text)) {}
+        : spinner_name_(std::move(spinner_name)), style_(std::move(style)),
+          speed_(speed), finished_(std::move(finished_text)) {}
 
     void set_spinner(std::string spinner_name,
                      std::string spinner_style = "progress.spinner", double speed = 1.0) {
-        spinner_ = rich::status::Spinner(std::move(spinner_name), std::move(spinner_style),
-                                         speed);
+        spinner_name_ = std::move(spinner_name);
         style_ = std::move(spinner_style);
+        speed_ = speed;
     }
 
     rich::AnyRenderable render(const Task& task, double now, const rich::Console& con,
@@ -585,12 +585,16 @@ public:
         }
         if (task.finished())
             return rich::AnyRenderable(rich::Text{finished_, style});
-        return rich::AnyRenderable(rich::Text{spinner_.frame_at(now), style});
+        // Python: a fresh Spinner per render call, so start_time = now and
+        // frame_no is always 0 — the first frame.
+        rich::status::Spinner spinner(spinner_name_, std::string(), style_, speed_);
+        return rich::AnyRenderable(rich::Text{spinner.render(now), style});
     }
 
 private:
-    mutable rich::status::Spinner spinner_;
+    std::string spinner_name_;
     std::string style_;
+    double speed_;
     std::string finished_;
 };
 

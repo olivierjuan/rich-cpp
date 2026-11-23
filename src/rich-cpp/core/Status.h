@@ -1,5 +1,6 @@
 #pragma once
 #include <rich_core.h>
+#include <SpinnerTable.h>
 #include <string>
 #include <vector>
 #include <thread>
@@ -17,64 +18,78 @@
 
 namespace rich::status {
 
-// Spinner frame tables (subset of Python Rich's SPINNERS).
-// "dots": braille dots, 80ms interval (matches rich._spinners.SPINNERS["dots"]).
-// "line": classic line spinner, 130ms interval.
-inline const std::vector<std::pair<std::string, std::pair<int, std::string>>>& spinner_table() {
-    static const std::vector<std::pair<std::string, std::pair<int, std::string>>> table = {
-        {"dots", {80, "\xe2\xa0\x8b" "\xe2\xa0\x99" "\xe2\xa0\xb9" "\xe2\xa0\xb8" "\xe2\xa0\xbc" "\xe2\xa1\xb4" "\xe2\xa1\xa6" "\xe2\xa1\xa7" "\xe2\xa0\x87" "\xe2\xa1\x8f"}},
-        {"line", {130, "-\\|/"}},
-    };
-    return table;
-}
-
-// Python rich.spinner.Spinner: frames + interval from the registry, speed
-// factor, and time-based frame selection. `frame_at(time)` mirrors
-// Spinner.render(time): the first call fixes start_time, then
-// frame = frames[int((t - t0) * speed / (interval_ms / 1000)) % len].
-// Unknown spinner names yield an empty frame table (render returns "").
+// Python rich.spinner.Spinner: frames + interval from the 73-entry registry
+// (SpinnerTable.h, generated from rich._spinners.SPINNERS), speed factor,
+// frame_no_offset continuity, and time-based frame selection.
+//   render(time): first call fixes start_time (so the first frame is always
+//   frame 0); frame_no = ((t - t0) * speed) / (interval_ms / 1000) + offset;
+//   frame = frames[int(frame_no) % len(frames)] (Python int() truncates).
+// update(speed) mirrors Python's deferred speed change: applied on the NEXT
+// render, preserving frame position via frame_no_offset.
+// Unknown spinner names throw std::invalid_argument (Python: KeyError).
 class Spinner {
 public:
-    Spinner(std::string name = "dots", std::string style = "progress.spinner",
-            double speed = 1.0)
-        : style_(std::move(style)), speed_(speed) {
-        for (const auto& [n, spec] : spinner_table()) {
-            if (n == name) {
-                interval_ms_ = spec.first;
-                const std::string& frames = spec.second;
-                // Frames are single codepoints; split on UTF-8 boundaries.
-                size_t i = 0;
-                while (i < frames.size()) {
-                    size_t len = 1;
-                    const unsigned char c = static_cast<unsigned char>(frames[i]);
-                    if (c >= 0xF0) len = 4;
-                    else if (c >= 0xE0) len = 3;
-                    else if (c >= 0xC0) len = 2;
-                    frames_.push_back(frames.substr(i, len));
-                    i += len;
-                }
-                break;
-            }
-        }
+    // Python: Spinner(name, text="", *, style=None, speed=1.0).
+    Spinner(std::string name = "dots", std::string text = "",
+            std::string style = "", double speed = 1.0)
+        : text_(std::move(text)), style_(std::move(style)), speed_(speed) {
+        const SpinnerDef* def = find_spinner_def(name);
+        if (!def)
+            throw std::invalid_argument("no spinner called '" + name + "'");
+        name_ = def->name;
+        interval_ms_ = def->interval_ms;
+        frames_ = def->frames;
     }
 
-    // Deterministic frame for a given clock value (seconds).
-    std::string frame_at(double time) const {
+    // Custom frames/interval (Python: spinner.frames = [...];
+    // spinner.interval = ...).
+    void set_frames(std::vector<std::string> frames, double interval_ms) {
+        frames_ = std::move(frames);
+        interval_ms_ = interval_ms;
+    }
+
+    // Deferred speed change (Python Spinner.update(speed=...)); applied on
+    // the next render() call, preserving the frame position.
+    void set_speed(double speed) {
+        if (speed != 0.0) pending_speed_ = speed;
+    }
+
+    // Python Spinner.render(time): frame glyph, or "frame text" when a
+    // text renderable is attached. Non-const: fixes start_time on first call
+    // and applies deferred speed updates (Python render() mutates too).
+    std::string render(double time) {
         if (frames_.empty()) return "";
         const double t0 = (start_time_ < 0.0) ? time : start_time_;
         if (start_time_ < 0.0) start_time_ = t0;
-        const double frame_no = ((time - t0) * speed_) / (interval_ms_ / 1000.0);
+        double frame_no = ((time - t0) * speed_) / (interval_ms_ / 1000.0) +
+                          frame_no_offset_;
+        if (pending_speed_ != 0.0) {
+            frame_no_offset_ = frame_no;
+            start_time_ = time;
+            speed_ = pending_speed_;
+            pending_speed_ = 0.0;
+        }
         const long long idx = static_cast<long long>(frame_no);
-        return frames_[(idx >= 0 ? idx : 0) % frames_.size()];
+        const long long n = static_cast<long long>(frames_.size());
+        std::string frame = frames_[(idx % n + n) % n];
+        if (text_.empty()) return frame;
+        return frame + " " + text_;
     }
 
+    const std::string& name() const { return name_; }
     const std::string& style() const { return style_; }
+    double interval_ms() const { return interval_ms_; }
+    const std::vector<std::string>& frames() const { return frames_; }
 
 private:
+    std::string name_;
     std::vector<std::string> frames_;
     double interval_ms_{80.0};
+    std::string text_;
     std::string style_;
     double speed_{1.0};
+    double frame_no_offset_{0.0};
+    double pending_speed_{0.0};
     mutable double start_time_{-1.0};
 };
 
@@ -95,20 +110,19 @@ private:
 class Status {
 public:
     // description may contain markup tags (e.g. "[bold]Loading[/] data").
-    // spinner_name: "dots" (default) or "line".
+    // spinner_name: any of the 73 registered spinners (default "dots").
     // speed: frames per second override; 0 = use the spinner's native interval.
+    // Unknown spinner names fall back to "dots" (Status is a convenience
+    // widget; rich::status::Spinner throws for unknown names).
     Status(std::string description, const char* spinner_name = "dots", double speed = 0)
         : description_(std::move(description)) {
-        for (const auto& [name, spec] : spinner_table()) {
-            if (name == spinner_name) {
-                interval_ms_ = spec.first;
-                frames_ = spec.second;
-                break;
-            }
-        }
+        const SpinnerDef* def = find_spinner_def(spinner_name);
+        if (!def) def = find_spinner_def("dots");
+        interval_ms_ = def->interval_ms;
+        frames_ = def->frames;
         if (speed > 0.0) {
-            interval_ms_ = static_cast<int>(1000.0 / speed);
-            if (interval_ms_ < 1) interval_ms_ = 1;
+            interval_ms_ = static_cast<double>(1000) / speed;
+            if (interval_ms_ < 1.0) interval_ms_ = 1.0;
         }
     }
 
@@ -138,7 +152,8 @@ public:
             // First frame: plain newline-terminated line (same as renderable output).
             write_line(frame(0));
             while (!st.stop_requested()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms_));
+                std::this_thread::sleep_for(std::chrono::milliseconds(
+                    static_cast<long long>(interval_ms_)));
                 if (st.stop_requested()) break;
                 size_t idx;
                 {
@@ -177,36 +192,9 @@ public:
     bool started() const { return ctrl_ && ctrl_->running.load(); }
 
     // Deterministic frame text (glyph + space + raw description markup), no newline.
-    // The dots spinner frames are multi-byte UTF-8 codepoints; we store them as
-    // a flat byte string and advance by decoding each codepoint's length.
     std::string frame(size_t index) const {
-        // Walk the frames_ byte string, counting codepoints to find frame `index`.
-        size_t cp = 0;
-        size_t pos = 0;
-        while (pos < frames_.size() && cp < index) {
-            unsigned char c = static_cast<unsigned char>(frames_[pos]);
-            if (c < 0x80) pos += 1;
-            else if ((c & 0xE0) == 0xC0) pos += 2;
-            else if ((c & 0xF0) == 0xE0) pos += 3;
-            else if ((c & 0xF8) == 0xF0) pos += 4;
-            else pos += 1;
-            ++cp;
-        }
-        // Advance past the target codepoint to get its byte range.
-        size_t end = pos;
-        if (pos < frames_.size()) {
-            unsigned char c = static_cast<unsigned char>(frames_[pos]);
-            if (c < 0x80) end = pos + 1;
-            else if ((c & 0xE0) == 0xC0) end = pos + 2;
-            else if ((c & 0xF0) == 0xE0) end = pos + 3;
-            else if ((c & 0xF8) == 0xF0) end = pos + 4;
-            else end = pos + 1;
-        }
-        std::string result;
-        result.append(frames_, pos, end - pos);
-        result.push_back(' ');
-        result.append(description_);
-        return result;
+        if (frames_.empty()) return description_;
+        return frames_[index % frames_.size()] + " " + description_;
     }
 
     const std::string& description() const { return description_; }
@@ -227,8 +215,8 @@ private:
     }
 
     std::string description_;
-    int interval_ms_{80};
-    std::string frames_{"\xe2\xa0\x8b" "\xe2\xa0\x99" "\xe2\xa0\xb9" "\xe2\xa0\xb8" "\xe2\xa0\xbc" "\xe2\xa1\xb4" "\xe2\xa1\xa6" "\xe2\xa1\xa7" "\xe2\xa0\x87" "\xe2\xa1\x8f"};
+    double interval_ms_{80.0};
+    std::vector<std::string> frames_;
 };
 
 // Renderable ADL customization points: renders frame 0 as one line.
