@@ -27,6 +27,7 @@
 #include <unicode/Unicode.h>
 #include <panel/GridTable.h>
 #include <Status.h>
+#include <Filesize.h>
 
 #include <algorithm>
 #include <cmath>
@@ -229,97 +230,6 @@ inline std::pair<size_t, size_t> measure_item(const ProgressBar& p, const rich::
 }
 
 } // namespace rich::progress_bar
-
-// ── rich.filesize helpers (decimal/binary + unit picking) ────────────────────
-
-namespace rich::filesize_detail {
-
-inline std::string comma_int(int64_t v) {
-    std::string s = std::to_string(v);
-    std::string out;
-    int count = 0;
-    for (auto it = s.rbegin(); it != s.rend(); ++it) {
-        if (count && count % 3 == 0) out.push_back(',');
-        out.push_back(*it);
-        ++count;
-    }
-    return std::string(out.rbegin(), out.rend());
-}
-
-// Python f"{value:,.{precision}f}" — fixed-point with thousands separator.
-inline std::string comma_fixed(double value, int precision) {
-    char buf[64];
-    std::snprintf(buf, sizeof(buf), "%.*f", precision, value);
-    std::string s = buf;
-    size_t dot = s.find('.');
-    std::string int_part = (dot == std::string::npos) ? s : s.substr(0, dot);
-    std::string frac = (dot == std::string::npos) ? "" : s.substr(dot);
-    std::string sign;
-    size_t start = 0;
-    if (!int_part.empty() && int_part[0] == '-') {
-        sign = "-";
-        start = 1;
-    }
-    std::string grouped;
-    int count = 0;
-    for (size_t i = int_part.size(); i > start; --i) {
-        if (count && count % 3 == 0) grouped.push_back(',');
-        grouped.push_back(int_part[i - 1]);
-        ++count;
-    }
-    return sign + std::string(grouped.rbegin(), grouped.rend()) + frac;
-}
-
-// Python filesize.pick_unit_and_suffix.
-inline std::pair<int64_t, std::string>
-pick_unit_and_suffix(int64_t size, const std::vector<std::string>& suffixes, int64_t base) {
-    int64_t unit = 1;
-    for (auto& suffix : suffixes) {
-        if (size < unit * base) return {unit, suffix};
-        unit *= base;
-    }
-    return {unit / base, suffixes.back()};
-}
-
-// Python filesize.decimal (SI prefixes, 1000 base).
-inline std::string decimal(int64_t size, int precision = 1, const char* separator = " ") {
-    if (size == 1) return "1 byte";
-    if (size < 1000) return comma_int(size) + " bytes";
-    static const std::vector<std::string> suffixes = {"kB", "MB", "GB", "TB",
-                                                      "PB", "EB", "ZB", "YB"};
-    int64_t unit = 1000 * 1000;
-    const char* suffix = suffixes.front().c_str();
-    for (size_t i = 0; i < suffixes.size(); ++i) {
-        if (size < unit) {
-            suffix = suffixes[i].c_str();
-            break;
-        }
-        unit *= 1000;
-    }
-    const double value = static_cast<double>(1000) * size / unit;
-    return comma_fixed(value, precision) + separator + suffix;
-}
-
-// Python filesize.binary (IEC prefixes, 1024 base).
-inline std::string binary(int64_t size, int precision = 1, const char* separator = " ") {
-    if (size == 1) return "1 byte";
-    if (size < 1024) return comma_int(size) + " bytes";
-    static const std::vector<std::string> suffixes = {"KiB", "MiB", "GiB", "TiB",
-                                                      "PiB", "EiB", "ZiB", "YiB"};
-    int64_t unit = 1024LL * 1024;
-    const char* suffix = suffixes.front().c_str();
-    for (size_t i = 0; i < suffixes.size(); ++i) {
-        if (size < unit) {
-            suffix = suffixes[i].c_str();
-            break;
-        }
-        unit *= 1024;
-    }
-    const double value = static_cast<double>(1024) * size / unit;
-    return comma_fixed(value, precision) + separator + suffix;
-}
-
-} // namespace rich::filesize_detail
 
 // ── rich.progress.Task ───────────────────────────────────────────────────────
 

@@ -63,6 +63,7 @@ TEST_CASES = [
     "live_extras",
     "pretty_sgr",
     "syntax_extras",
+    "number_extras",
 ]
 
 import os

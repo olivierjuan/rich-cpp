@@ -1074,6 +1074,35 @@ def generate_python_oracle(test_name: str) -> str:
         c2.print(Syntax(py, "python", background_color="#1e2e3e"))
         c2.print(Syntax("hello world\n", "nosuchlexer"))
         return sink2.getvalue()
+    elif test_name == "number_extras":
+        # rich.filesize.decimal (SI), _to_str with the IEC list (binary),
+        # and pick_unit_and_suffix — all deterministic string output,
+        # including digit grouping, precision/separator variants, and the
+        # int64-edge sizes where the break unit exceeds int64 (10^21).
+        from rich.filesize import decimal, _to_str, pick_unit_and_suffix
+        IEC = ("KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB")
+        out = []
+        for s in [0, 1, 2, 999, 1000, 1024, 9999, 10000, 123456, 30000,
+                  999999999, 10**9, 10**9 + 123456789, 10**12, 10**15,
+                  10**18, 10**18 + 123456, 2560 * 1000, 750 * 1000 * 1000,
+                  123456789012345, 9223372036854775807]:
+            out.append(decimal(s))
+        for s in [30000, 1234567, 12345678901, 999999999999999999,
+                  9223372036854775807]:
+            out.append(decimal(s, precision=0))
+            out.append(decimal(s, precision=2, separator=""))
+            out.append(decimal(s, precision=3, separator="  "))
+        for s in [0, 1, 2, 1023, 1024, 1536, 1048576, 1234567890,
+                  999999999999999999, 9223372036854775807]:
+            out.append(_to_str(s, IEC, 1024))
+        out.append(_to_str(1234567, IEC, 1024, precision=2, separator=""))
+        out.append(_to_str(999999999999999999, IEC, 1024, precision=0))
+        suf = ["", "kB", "MB", "GB", "TB", "PB", "EB"]
+        for s in [0, 1, 999, 1000, 1001, 1000000, 1000005, 1000000000,
+                  1000000000001, 10**18]:
+            unit, suffix = pick_unit_and_suffix(s, suf, 1000)
+            out.append(f"{unit} {suffix}")
+        return "\n".join(out) + "\n"
     return c.export_text()
 
 def main():

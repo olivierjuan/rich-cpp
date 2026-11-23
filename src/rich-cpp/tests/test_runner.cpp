@@ -20,6 +20,7 @@
 #include <json/Json.h>
 #include <ProgressBar.h>
 #include <Progress.h>
+#include <Filesize.h>
 #include <highlight/Syntax.h>
 #include <markdown/Markdown.h>
 #include <iostream>
@@ -1571,6 +1572,38 @@ int main(int argc, char* argv[]) {
         }
         sc.print(rich::highlight::syntax("hello world\n", "nosuchlexer"));
         std::cout << s_oss.str();
+        return 0;
+    } else if (test_name == "number_extras") {
+        // rich::filesize — decimal (SI), binary (IEC, same _to_str semantics
+        // as rich.filesize._to_str), pick_unit_and_suffix. Plain text lines,
+        // mirroring oracle_gen.number_extras.
+        const int64_t sizes[] = {0, 1, 2, 999, 1000, 1024, 9999, 10000,
+                                 123456, 30000, 999999999, 1000000000,
+                                 1123456789, 1000000000000LL,
+                                 1000000000000000LL, 1000000000000000000LL,
+                                 1000000000000123456LL, 2560000, 750000000,
+                                 123456789012345LL, 9223372036854775807LL};
+        for (auto s : sizes) std::cout << rich::filesize::decimal(s) << "\n";
+        const int64_t pv[] = {30000, 1234567, 12345678901, 999999999999999999,
+                              9223372036854775807LL};
+        for (auto s : pv) {
+            std::cout << rich::filesize::decimal(s, 0) << "\n";
+            std::cout << rich::filesize::decimal(s, 2, "") << "\n";
+            std::cout << rich::filesize::decimal(s, 3, "  ") << "\n";
+        }
+        const int64_t bv[] = {0, 1, 2, 1023, 1024, 1536, 1048576, 1234567890,
+                              999999999999999999, 9223372036854775807LL};
+        for (auto s : bv) std::cout << rich::filesize::binary(s) << "\n";
+        std::cout << rich::filesize::binary(1234567, 2, "") << "\n";
+        std::cout << rich::filesize::binary(999999999999999999, 0) << "\n";
+        std::vector<std::string> suf = {"", "kB", "MB", "GB", "TB", "PB", "EB"};
+        const int64_t picks[] = {0, 1, 999, 1000, 1001, 1000000, 1000005,
+                                 1000000000, 1000000000001LL, 1000000000000000000LL};
+        for (auto s : picks) {
+            auto [u, x] = rich::filesize::pick_unit_and_suffix(s, suf, 1000);
+            std::cout << std::to_string(static_cast<int64_t>(u)) << " " << x
+                      << "\n";
+        }
         return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
