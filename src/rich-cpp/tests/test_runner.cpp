@@ -960,6 +960,30 @@ int main(int argc, char* argv[]) {
         pc.print(rich::AnyRenderable(rich::panel::Panel(pt("No Style Plain"))));
         std::cout << p_oss.str();
         return 0;
+    } else if (test_name == "rule_extras") {
+        // characters / style / align — raw SGR (dash style is byte-visible).
+        std::ostringstream r_oss;
+        rich::ConsoleOptions r_opts{.width = 60, .height = 25, .record = false,
+                                    .legacy_windows = false,
+                                    .force_terminal = true,
+                                    .color_system = rich::ColorSystem::Truecolor,
+                                    .no_color = false};
+        rich::Console rc(r_oss, r_opts);
+        rc.print(rich::AnyRenderable(rich::Rule{std::string("My Rule"), 0}));
+        rc.print(rich::AnyRenderable(rich::Rule{std::string("X"), 0, "*"}));
+        rc.print(rich::AnyRenderable(rich::Rule{std::string("X"), 0, std::string("\xe2\x94\x81")}));
+        rc.print(rich::AnyRenderable(rich::Rule{std::string("X"), 0, {}, "red"}));
+        rc.print(rich::AnyRenderable(rich::Rule{std::string("X"), 0, {}, "bold"}));
+        rc.print(rich::AnyRenderable(rich::Rule{std::string("X"), 0, {}, {}, rich::Rule::Align::Left}));
+        rc.print(rich::AnyRenderable(rich::Rule{std::string("X"), 0, {}, {}, rich::Rule::Align::Right}));
+        rc.print(rich::AnyRenderable(rich::Rule{std::string(), 0, "*"}));
+        rc.print(rich::AnyRenderable(rich::Rule{std::string(50, 'A'), 0}));
+        rc.print(rich::AnyRenderable(rich::Rule{std::string(50, 'B'), 0, {}, {}, rich::Rule::Align::Left}));
+        rc.print(rich::AnyRenderable(rich::Rule{std::string(50, 'C'), 0, {}, {}, rich::Rule::Align::Right}));
+        rc.print(rich::AnyRenderable(rich::Rule{std::string("[bold]Bold[/]"), 0}));
+        rc.print(rich::AnyRenderable(rich::Rule{std::string("Mix"), 0, "--", "green"}));
+        std::cout << r_oss.str();
+        return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
         return 1;

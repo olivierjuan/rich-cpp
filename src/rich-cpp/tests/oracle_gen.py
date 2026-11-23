@@ -662,6 +662,27 @@ def generate_python_oracle(test_name: str) -> str:
         c.print(Panel("A", style="bold", border_style="red"))
         c.print(Panel("No Style Plain"))
         return sink.getvalue()
+    elif test_name == "rule_extras":
+        # characters / style / align — raw SGR (dash style is byte-visible).
+        from rich.rule import Rule as RuleR
+        sink = io.StringIO()
+        c = Console(file=sink, width=60, height=25, record=False,
+                    legacy_windows=False, force_terminal=True,
+                    color_system="truecolor", no_color=False)
+        c.print(RuleR("My Rule"))
+        c.print(RuleR("X", characters="*"))
+        c.print(RuleR("X", characters="\u2501"))
+        c.print(RuleR("X", style="red"))
+        c.print(RuleR("X", style="bold"))
+        c.print(RuleR("X", align="left"))
+        c.print(RuleR("X", align="right"))
+        c.print(RuleR(characters="*"))
+        c.print(RuleR("A" * 50))
+        c.print(RuleR("B" * 50, align="left"))
+        c.print(RuleR("C" * 50, align="right"))
+        c.print(RuleR("[bold]Bold[/]"))
+        c.print(RuleR("Mix", characters="--", style="green"))
+        return sink.getvalue()
     return c.export_text()
 
 def main():

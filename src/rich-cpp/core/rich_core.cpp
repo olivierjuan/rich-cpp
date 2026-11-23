@@ -1183,24 +1183,138 @@ std::string Console::export_svg(const std::string& title, const std::string& uni
     return out;
 }
 
-std::vector<Segment> render_item(const Rule& r, const Console& c, const Options& opt) {
-    size_t target_width = (r.width > 0) ? r.width : ((opt.width > 0) ? opt.width : 80);
-    std::vector<Segment> out;
-    // Python Rule default style="rule.line" -> bright_green; title style="rule.text" -> Style.null().
-    const Style dash_style = c.get_style("rule.line");
+namespace {
+// Python Text.truncate parity on a raw string: cut at max cells (a wide
+// character is dropped whole).
+inline std::string rule_truncate(std::string s, size_t max_cells) {
+    size_t used = 0;
+    size_t i = 0;
+    std::string_view sv(s);
+    while (i < s.size()) {
+        size_t j = i;
+        char32_t cp = unicode::decode_utf8(sv, j);
+        size_t cw = static_cast<size_t>(unicode::get_character_cell_size(cp));
+        if (used + cw > max_cells) break;
+        used += cw;
+        i = j;
+    }
+    s.resize(i);
+    return s;
+}
+// Python Text.truncate(overflow="ellipsis") parity.
+inline std::string rule_truncate_ellipsis(std::string s, size_t max_cells) {
+    if (unicode::string_cell_len(s) <= max_cells) return s;
+    if (max_cells == 0) return std::string();
+    return rule_truncate(std::move(s), max_cells - 1) + std::string("\xe2\x80\xa6");
+}
+} // namespace
 
+std::vector<Segment> render_item(const Rule& r, const Console& c, const Options& opt) {
+    size_t width = (r.width > 0) ? r.width : ((opt.width > 0) ? opt.width : 80);
+    std::string chars = r.characters.empty() ? std::string("\xe2\x94\x80") : r.characters;
+    size_t chars_len = unicode::string_cell_len(chars);
+    if (chars_len == 0) {
+        chars = "-";
+        chars_len = 1; // Python raises ValueError here; stay robust
+    }
+    // Python: dash style = console.get_style(self.style); default "rule.line".
+    Style dash_style;
+    try {
+        dash_style = c.get_style(r.style.empty() ? std::string_view("rule.line") : std::string_view(r.style), "");
+    } catch (const std::exception&) {
+        dash_style = c.get_style("rule.line");
+    }
+
+    // No title: characters * (width // chars_len + 1), truncated to width.
     if (r.title.empty()) {
-        out.push_back({repeat_utf8_core("─", target_width) + "\n", dash_style});
+        std::string line = rule_truncate(repeat_utf8_core(chars, (width / chars_len) + 1), width);
+        std::vector<Segment> out;
+        out.push_back({line + "\n", dash_style});
         return out;
     }
 
-    size_t title_len = r.title.size();
-    size_t side = (target_width > title_len + 2) ? (target_width - title_len - 2) / 2 : 2;
-    size_t right = (target_width >= side + title_len + 2) ? (target_width - side - title_len - 2) : side;
+    // Python: title is a markup string rendered with the "rule.text" base
+    // style (null by default); newlines → spaces, tabs expanded.
+    auto title_segs = parse_markup(r.title);
+    for (auto& s : title_segs) {
+        std::string t;
+        t.reserve(s.text.size());
+        for (char ch : s.text) {
+            if (ch == '\n') t.push_back(' ');
+            else t.push_back(ch);
+        }
+        s.text = std::move(t);
+    }
 
-    out.push_back({repeat_utf8_core("─", side) + " ", dash_style});
-    out.push_back({r.title, Style{}});
-    out.push_back({" " + repeat_utf8_core("─", right) + "\n", dash_style});
+    size_t title_len = 0;
+    for (const auto& s : title_segs) title_len += unicode::string_cell_len(s.text);
+    if (title_len == 0) title_segs.clear();
+
+    std::vector<Segment> out;
+
+    if (title_segs.empty()) {
+        std::string line = rule_truncate(repeat_utf8_core(chars, (width / chars_len) + 1), width);
+        out.push_back({line + "\n", dash_style});
+        return out;
+    }
+
+    if (r.align == Rule::Align::Center) {
+        // Python: truncate(width - 4, ellipsis); side_width = (width - len)//2;
+        // left = chars*(side_width//chars_len + 1) truncated to side_width - 1;
+        // right_length = width - left - title; right = same repeat truncated.
+        // The composed line is then set_cell_size(width) (truncates the
+        // right end by one dash — the math below yields the same result
+        // directly).
+        size_t truncate_width = (width >= 4) ? (width - 4) : 0;
+        if (truncate_width == 0) {
+            std::string line = rule_truncate(repeat_utf8_core(chars, (width / chars_len) + 1), width);
+            out.push_back({line + "\n", dash_style});
+            return out;
+        }
+        auto title_trunc = title_segs;
+        size_t tl = title_len;
+        if (tl > truncate_width) {
+            // Cell-based ellipsis truncation across the run.
+            std::string flat;
+            for (const auto& s : title_trunc) flat += s.text;
+            std::string cut = rule_truncate_ellipsis(std::move(flat), truncate_width);
+            title_trunc = {{cut, title_trunc.front().style}};
+            tl = unicode::string_cell_len(cut);
+        }
+        size_t side_width = (width - tl) / 2;
+        size_t left_len = (side_width >= 1) ? (side_width - 1) : 0;
+        std::string left = rule_truncate(repeat_utf8_core(chars, (side_width / chars_len) + 1), left_len);
+        // Python: right = repeat truncated to (width - left - title), then
+        // set_cell_size(width) trims two dashes from the right end
+        // (the composed line is width + 2 cells) → right = width - left - title - 2.
+        size_t right_len = (width >= unicode::string_cell_len(left) + tl + 2)
+                               ? (width - unicode::string_cell_len(left) - tl - 2)
+                               : 0;
+        std::string right = rule_truncate(repeat_utf8_core(chars, (side_width / chars_len) + 1), right_len);
+        out.push_back({left + " ", dash_style});
+        for (auto& s : title_trunc) out.push_back({std::move(s.text), s.style});
+        out.push_back({" " + right + "\n", dash_style});
+    } else if (r.align == Rule::Align::Left) {
+        size_t truncate_width = (width >= 2) ? (width - 2) : 0;
+        std::string flat;
+        for (const auto& s : title_segs) flat += s.text;
+        std::string cut = rule_truncate_ellipsis(std::move(flat), truncate_width);
+        size_t cut_len = unicode::string_cell_len(cut);
+        out.push_back({cut, title_segs.front().style});
+        out.push_back({" ", Style{}});
+        size_t dashes = (width >= cut_len + 1) ? (width - cut_len - 1) : 0;
+        out.push_back({repeat_utf8_core(chars, dashes) + "\n", dash_style});
+    } else {
+        size_t truncate_width = (width >= 2) ? (width - 2) : 0;
+        std::string flat;
+        for (const auto& s : title_segs) flat += s.text;
+        std::string cut = rule_truncate_ellipsis(std::move(flat), truncate_width);
+        size_t cut_len = unicode::string_cell_len(cut);
+        size_t dashes = (width >= cut_len + 1) ? (width - cut_len - 1) : 0;
+        out.push_back({repeat_utf8_core(chars, dashes), dash_style});
+        out.push_back({" ", Style{}});
+        out.push_back({cut + "\n", title_segs.front().style});
+    }
     return out;
 }
 

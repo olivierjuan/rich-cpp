@@ -693,6 +693,10 @@ inline std::pair<size_t, size_t> measure_item(const StyledText& t, const Console
 struct Rule {
     std::string title;
     size_t width{0};
+    std::string characters; // Python characters (line glyph run; default "─")
+    std::string style;      // Python style (default: theme "rule.line")
+    enum class Align { Left, Center, Right };
+    Align align{Align::Center}; // Python align (default center)
 };
 RICH_EXPORT std::vector<Segment> render_item(const Rule& r, const Console& c, const Options& o);
 RICH_EXPORT std::pair<size_t, size_t> measure_item(const Rule& r, const Console& c, const Options& o);
