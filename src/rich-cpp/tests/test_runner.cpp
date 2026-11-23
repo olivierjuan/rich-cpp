@@ -933,6 +933,33 @@ int main(int argc, char* argv[]) {
             show_table(std::move(t));
         }
         return 0;
+    } else if (test_name == "panel_extras") {
+        // subtitle / style / border_style / expand / fit / height — raw SGR
+        // (styles are byte-visible; geometry covers expand/fit/height).
+        std::ostringstream p_oss;
+        rich::ConsoleOptions p_opts{.width = 60, .height = 25, .record = false,
+                                    .legacy_windows = false,
+                                    .force_terminal = true,
+                                    .color_system = rich::ColorSystem::Truecolor,
+                                    .no_color = false};
+        rich::Console pc(p_oss, p_opts);
+        auto pt = [](const char* s) { return rich::AnyRenderable(rich::Text{std::string(s), {}}); };
+        pc.print(rich::AnyRenderable(rich::panel::Panel(pt("Hello World"),
+                                                        rich::panel::PanelOptions{.style = "red"})));
+        pc.print(rich::AnyRenderable(rich::panel::Panel(pt("Content here"),
+                                                        rich::panel::PanelOptions{.subtitle = "Subtitle", .style = "dim"})));
+        pc.print(rich::AnyRenderable(rich::panel::Panel::fit(pt("Short"))));
+        pc.print(rich::AnyRenderable(rich::panel::Panel::fit(pt("Shorter content"),
+                                                             rich::panel::PanelOptions{.title = "FitTitle"})));
+        pc.print(rich::AnyRenderable(rich::panel::Panel(pt("X"),
+                                                        rich::panel::PanelOptions{.width = 30, .subtitle = "Sub"})));
+        pc.print(rich::AnyRenderable(rich::panel::Panel(pt("Line"),
+                                                        rich::panel::PanelOptions{.height = 6, .title = "H"})));
+        pc.print(rich::AnyRenderable(rich::panel::Panel(pt("A"),
+                                                        rich::panel::PanelOptions{.style = "bold", .border_style = "red"})));
+        pc.print(rich::AnyRenderable(rich::panel::Panel(pt("No Style Plain"))));
+        std::cout << p_oss.str();
+        return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
         return 1;

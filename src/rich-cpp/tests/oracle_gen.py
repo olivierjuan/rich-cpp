@@ -646,6 +646,22 @@ def generate_python_oracle(test_name: str) -> str:
         t.add_row("x", "y", "z")
         c.print(t)
         return c.export_text()
+    elif test_name == "panel_extras":
+        # subtitle / style / border_style / expand / fit / height — raw SGR
+        # (styles are byte-visible; geometry covers expand/fit/height).
+        sink = io.StringIO()
+        c = Console(file=sink, width=60, height=25, record=False,
+                    legacy_windows=False, force_terminal=True,
+                    color_system="truecolor", no_color=False)
+        c.print(Panel("Hello World", style="red"))
+        c.print(Panel("Content here", subtitle="Subtitle", style="dim"))
+        c.print(Panel.fit("Short"))
+        c.print(Panel.fit("Shorter content", title="FitTitle"))
+        c.print(Panel("X", width=30, subtitle="Sub"))
+        c.print(Panel("Line", height=6, title="H"))
+        c.print(Panel("A", style="bold", border_style="red"))
+        c.print(Panel("No Style Plain"))
+        return sink.getvalue()
     return c.export_text()
 
 def main():

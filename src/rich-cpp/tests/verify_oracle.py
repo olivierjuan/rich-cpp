@@ -53,6 +53,7 @@ TEST_CASES = [
     "highlighter_basic",
     "text_extras_basic",
     "table_extras",
+    "panel_extras",
 ]
 
 import os
