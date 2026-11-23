@@ -175,11 +175,23 @@ public:
 
     bool empty() const noexcept { return !self_; }
 
-private:
+    // Python Console.print path: Text renderables are collected through
+    // Text(" ").join([t]) (Console._collect_renderables), and join builds
+    // from the separator's blank_copy() — so the Text's base style,
+    // justify, and overflow are dropped; only content and spans survive.
+    // Other renderables pass through unchanged (default hook).
+    std::vector<Segment> print_render(const Console& con, const Options& opt) const {
+        return self_ ? self_->print_render(con, opt) : std::vector<Segment>{};
+    }
+
+public:
     struct Concept {
         virtual ~Concept() = default;
         virtual std::vector<Segment> render(const Console& con, const Options& opt) const = 0;
         virtual std::pair<size_t, size_t> measure(const Console& con, const Options& opt) const = 0;
+        virtual std::vector<Segment> print_render(const Console& con, const Options& opt) const {
+            return render(con, opt);
+        }
     };
 
     template<class T>
@@ -198,6 +210,7 @@ private:
         T t_;
     };
 
+private:
     std::shared_ptr<const Concept> self_;
 };
 

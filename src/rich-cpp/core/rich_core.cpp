@@ -634,11 +634,14 @@ void Console::print(const AnyRenderable& ar) {
     // height stays 0 (= unset), mirroring Python options.height=None on plain print.
     // Layouts query Console::height() instead.
     Options opt{.width = active_w};
-    auto segments = ar.render(*this, opt);
-    // Python print(): renderable segments pass through
+    // Python print(): renderables pass through _collect_renderables, which
+    // joins Text objects via Text(" ").join — dropping their base style,
+    // justify, and overflow (print_render implements that). Other
+    // renderables render unchanged. Segments then pass through
     // Segment.split_and_crop_lines(width, pad=False); each '\n' becomes a
     // standalone style=None segment, over-wide lines crop at cell boundaries.
     // (Renderables carry their own trailing newline, cf. Text end="\n".)
+    auto segments = ar.print_render(*this, opt);
     auto out = split_and_crop_lines(std::move(segments), active_w);
     emit_segments(out);
 }

@@ -3,6 +3,7 @@
 #include <FileProxy.h>
 #include <box.h>
 #include <Text.h>
+#include <Highlighter.h>
 #include <panel/Panel.h>
 #include <panel/Padding.h>
 #include <panel/Table.h>
@@ -714,6 +715,156 @@ int main(int argc, char* argv[]) {
             base);
         c.print(rich::AnyRenderable(t));
         std::cout << c.export_text();
+        return 0;
+    } else if (test_name == "highlighter_basic") {
+        // Raw SGR stream (force_terminal truecolor): built-in highlighters.
+        // print() flattens Text (base style dropped) — spans-only output.
+        rich::ConsoleOptions s_opts{.width = 60, .height = 25, .record = false,
+                                    .legacy_windows = false,
+                                    .force_terminal = true,
+                                    .color_system = rich::ColorSystem::Truecolor,
+                                    .no_color = false};
+        std::ostringstream s_oss;
+        rich::Console sc(s_oss, s_opts);
+        sc.print(rich::AnyRenderable(
+            rich::ReprHighlighter()(
+                std::string("{'name': 'apple', 'count': 1, 'ok': True, 'n': None}"))));
+        sc.print(rich::AnyRenderable(
+            rich::ReprHighlighter()(std::string("[1, 2.5, -3, 1.5e10, 0x1F, 2+3j]"))));
+        sc.print(rich::AnyRenderable(
+            rich::ReprHighlighter()(
+                std::string("127.0.0.1 2001:db8::1 /foo/bar.py https://ex.org/x?a=1"))));
+        sc.print(rich::AnyRenderable(rich::JSONHighlighter()(
+            std::string("{\"name\": \"apple\", \"count\": 1, \"flag\": true, \"z\": null, "
+                        "\"nested\": {\"a\": [1, 2]}}"))));
+        sc.print(rich::AnyRenderable(
+            rich::ISO8601Highlighter()(std::string("2008-08-30 17:21:59"))));
+        sc.print(rich::AnyRenderable(
+            rich::ISO8601Highlighter()(std::string("2008-08-30T01:45:36.123Z"))));
+        sc.print(rich::AnyRenderable(
+            rich::ISO8601Highlighter()(std::string("2008-W35-6"))));
+        sc.print(rich::AnyRenderable(
+            rich::NullHighlighter()(std::string("nothing here 123"))));
+        std::cout << s_oss.str();
+        return 0;
+    } else if (test_name == "text_extras_basic") {
+        // Full Text semantics (base style, justify, overflow HONORED):
+        // console.print flattens Text, so render through render_lines —
+        // the same path a container (Panel/Group) uses.
+        std::ostringstream te_out;
+        auto show = [&](const rich::text::Text& t, size_t w) {
+            rich::ConsoleOptions o{.width = w, .height = 25, .record = false,
+                                   .legacy_windows = false,
+                                   .force_terminal = true,
+                                   .color_system = rich::ColorSystem::Truecolor,
+                                   .no_color = false};
+            std::ostringstream dummy;
+            rich::Console c2(dummy, o);
+            auto lines = c2.render_lines({rich::AnyRenderable(t)},
+                                         rich::Options{.width = w}, nullptr, false);
+            for (auto& line : lines) {
+                for (auto& s : line) {
+                    std::string sg =
+                        rich::style_sgr(s.style, rich::ColorSystem::Truecolor, false);
+                    if (sg.empty()) te_out << s.text;
+                    else te_out << sg << s.text << "\x1b[0m";
+                }
+                te_out << "\n";
+            }
+        };
+        {
+            auto t = rich::text::Text("the quick brown fox jumps over the lazy dog");
+            t.set_justify(rich::text::Justify::Full);
+            show(t, 40);
+        }
+        {
+            auto t = rich::text::Text("the quick brown fox jumps over the lazy dog");
+            t.set_justify(rich::text::Justify::Full);
+            t.stylize(std::string("bold"), 0, 20);
+            show(t, 40);
+        }
+        {
+            auto t = rich::text::Text(
+                "the quick brown fox jumps over the lazy dog",
+                rich::parse_style_def("red"));
+            t.set_justify(rich::text::Justify::Full);
+            show(t, 40);
+        }
+        {
+            auto t = rich::text::Text("hi");
+            t.set_justify(rich::text::Justify::Center);
+            t.stylize(std::string("bold"), 0, 2);
+            show(t, 10);
+        }
+        {
+            auto t = rich::text::Text("hi");
+            t.set_justify(rich::text::Justify::Right);
+            t.stylize(std::string("italic"), 0, 2);
+            show(t, 10);
+        }
+        {
+            auto t = rich::text::Text("hi");
+            t.set_justify(rich::text::Justify::Left);
+            t.stylize(std::string("underline"), 1, 2);
+            show(t, 10);
+        }
+        {
+            auto t = rich::text::Text("hi", rich::parse_style_def("red"));
+            t.stylize(std::string("bold"), 0, 1);
+            show(t, 10);
+        }
+        {
+            auto t = rich::text::Text("helloxxxxxxxxxxxxx world");
+            t.set_overflow(rich::text::Overflow::Ellipsis);
+            t.stylize(std::string("red"), 0, 5);
+            show(t, 12);
+        }
+        {
+            auto t = rich::text::Text("helloxxxxxxxxxxxxx world");
+            t.set_overflow(rich::text::Overflow::Crop);
+            t.stylize(std::string("red"), 0, 5);
+            show(t, 12);
+        }
+        {
+            auto t = rich::text::Text("xxxxxxxxxxxxxxxxxxxxx yyy");
+            t.set_overflow(rich::text::Overflow::Fold);
+            t.stylize(std::string("blue"), 0, 5);
+            show(t, 10);
+        }
+        {
+            auto t = rich::text::Text(std::string("ab\ncd"));
+            t.stylize(std::string("bold"), 0, 4);
+            show(t, 20);
+        }
+        {
+            auto t = rich::text::Text(std::string("a\tbb"));
+            t.stylize(std::string("bold"), 1, 3);
+            show(t, 20);
+        }
+        show(rich::text::Text(std::string("a\tbb")), 20);
+        show(rich::text::Text::assemble({
+                   rich::text::Text::Part("he", rich::parse_style_def("bold")),
+                   rich::text::Text::Part("llo", rich::parse_style_def("italic")),
+                   rich::text::Text::Part(" world")}),
+             20);
+        show(rich::text::Text::styled("abc", rich::parse_style_def("bold red")), 20);
+        {
+            auto t = rich::text::Text("apple banana");
+            t.highlight_regex(std::string("(?P<f>\\w+) (?P<s>\\w+)"),
+                              std::string("green"), std::string("t."));
+            show(t, 20);
+        }
+        {
+            auto t = rich::text::Text(std::string("abc   \n  def  "));
+            t.stylize(std::string("bold"), 0, 3);
+            show(t, 20);
+        }
+        {
+            auto t = rich::text::Text("the  quick fox");
+            t.set_justify(rich::text::Justify::Full);
+            show(t, 20);
+        }
+        std::cout << te_out.str();
         return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";

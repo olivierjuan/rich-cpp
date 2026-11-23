@@ -50,6 +50,8 @@ TEST_CASES = [
     "colorfile_basic",
     "fileproxy_basic",
     "from_ansi_basic",
+    "highlighter_basic",
+    "text_extras_basic",
 ]
 
 import os

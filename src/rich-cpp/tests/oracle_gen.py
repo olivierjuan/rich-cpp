@@ -515,6 +515,94 @@ def generate_python_oracle(test_name: str) -> str:
                      legacy_windows=False)
         c3.print(t)
         return c3.export_text()
+    elif test_name == "highlighter_basic":
+        # Raw SGR stream (force_terminal truecolor): the built-in
+        # highlighters. print() flattens Text (base style dropped), so the
+        # visible output is spans-only — compare sink bytes directly.
+        from rich.highlighter import (
+            ReprHighlighter,
+            JSONHighlighter,
+            ISO8601Highlighter,
+            NullHighlighter,
+        )
+        sink2 = io.StringIO()
+        c2 = Console(file=sink2, width=60, height=25, force_terminal=True,
+                     color_system="truecolor", no_color=False,
+                     legacy_windows=False)
+        c2.print(ReprHighlighter()(
+            "{'name': 'apple', 'count': 1, 'ok': True, 'n': None}"))
+        c2.print(ReprHighlighter()("[1, 2.5, -3, 1.5e10, 0x1F, 2+3j]"))
+        c2.print(ReprHighlighter()(
+            "127.0.0.1 2001:db8::1 /foo/bar.py https://ex.org/x?a=1"))
+        c2.print(JSONHighlighter()(
+            '{"name": "apple", "count": 1, "flag": true, "z": null, '
+            '"nested": {"a": [1, 2]}}'))
+        c2.print(ISO8601Highlighter()("2008-08-30 17:21:59"))
+        c2.print(ISO8601Highlighter()("2008-08-30T01:45:36.123Z"))
+        c2.print(ISO8601Highlighter()("2008-W35-6"))
+        c2.print(NullHighlighter()("nothing here 123"))
+        return sink2.getvalue()
+    elif test_name == "text_extras_basic":
+        # Full Text semantics (base style, justify, overflow HONORED):
+        # console.print flattens Text through Text(" ").join([t]), so these
+        # go through render_lines + _render_buffer instead — the same
+        # pipeline a container (Panel/Group) uses.
+        def show(t, w):
+            nonlocal te_out
+            c2 = Console(file=io.StringIO(), width=w, height=25,
+                         force_terminal=True, color_system="truecolor",
+                         no_color=False, legacy_windows=False)
+            lines = c2.render_lines(t, c2.options.update(width=w), pad=False)
+            te_out += "".join(c2._render_buffer(line) + "\n" for line in lines)
+
+        te_out = ""
+        show(Text("the quick brown fox jumps over the lazy dog",
+                  justify="full"), 40)
+        t = Text("the quick brown fox jumps over the lazy dog",
+                 justify="full")
+        t.stylize("bold", 0, 20)
+        show(t, 40)
+        show(Text("the quick brown fox jumps over the lazy dog",
+                  style="red", justify="full"), 40)
+        t = Text("hi", justify="center")
+        t.stylize("bold", 0, 2)
+        show(t, 10)
+        t = Text("hi", justify="right")
+        t.stylize("italic", 0, 2)
+        show(t, 10)
+        t = Text("hi", justify="left")
+        t.stylize("underline", 1, 2)
+        show(t, 10)
+        t = Text("hi", style="red")
+        t.stylize("bold", 0, 1)
+        show(t, 10)
+        t = Text("helloxxxxxxxxxxxxx world", overflow="ellipsis")
+        t.stylize("red", 0, 5)
+        show(t, 12)
+        t = Text("helloxxxxxxxxxxxxx world", overflow="crop")
+        t.stylize("red", 0, 5)
+        show(t, 12)
+        t = Text("xxxxxxxxxxxxxxxxxxxxx yyy", overflow="fold")
+        t.stylize("blue", 0, 5)
+        show(t, 10)
+        t = Text("ab\ncd")
+        t.stylize("bold", 0, 4)
+        show(t, 20)
+        t = Text("a\tbb")
+        t.stylize("bold", 1, 3)
+        show(t, 20)
+        show(Text("a\tbb"), 20)
+        show(Text.assemble(("he", "bold"), ("llo", "italic"), " world"), 20)
+        show(Text.styled("abc", "bold red"), 20)
+        t = Text("apple banana")
+        t.highlight_regex(r"(?P<f>\w+) (?P<s>\w+)", "green",
+                         style_prefix="t.")
+        show(t, 20)
+        t = Text("abc   \n  def  ")
+        t.stylize("bold", 0, 3)
+        show(t, 20)
+        show(Text("the  quick fox", justify="full"), 20)
+        return te_out
     return c.export_text()
 
 def main():
