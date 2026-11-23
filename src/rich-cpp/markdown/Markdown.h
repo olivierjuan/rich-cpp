@@ -487,7 +487,198 @@ inline size_t find_close(std::string_view s, size_t from, char c, size_t open_le
     return std::string_view::npos;
 }
 
-inline void parse_inline(std::string_view s, std::vector<Tok>& out) {
+// ── link destination / title (markdown-it helpers/parse_link_*) ────────────
+inline std::string unescape_all(std::string_view s) {
+    std::string out;
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == '\\' && i + 1 < s.size() && is_escapable(s[i + 1])) {
+            out += s[i + 1];
+            ++i;
+        } else {
+            out += s[i];
+        }
+    }
+    return out;
+}
+struct DestRes {
+    bool ok{false};
+    size_t pos{0};
+    std::string str;
+};
+inline DestRes parse_link_dest(std::string_view s, size_t pos, size_t max) {
+    if (pos < max && s[pos] == '<') {
+        size_t i = pos + 1;
+        for (; i < max;) {
+            const char ch = s[i];
+            if (ch == '\n' || ch == '<') return DestRes{};
+            if (ch == '>')
+                return DestRes{true, i + 1,
+                               unescape_all(s.substr(pos + 1, i - pos - 1))};
+            if (ch == '\\' && i + 1 < max) {
+                i += 2;
+                continue;
+            }
+            ++i;
+        }
+        return DestRes{}; // no closing '>'
+    }
+    int level = 0;
+    const size_t start = pos;
+    for (; pos < max;) {
+        const unsigned char c = static_cast<unsigned char>(s[pos]);
+        if (c == ' ' || c == '\t' || c < 0x20 || c == 0x7F) break;
+        if (c == '\\') {
+            if (pos + 1 < max && s[pos + 1] == ' ') break;
+            pos += 2;
+            continue;
+        }
+        if (c == '(') {
+            if (++level > 32) return DestRes{};
+        } else if (c == ')') {
+            if (level == 0) break;
+            --level;
+        }
+        ++pos;
+    }
+    if (pos == start || level != 0) return DestRes{};
+    return DestRes{true, pos, unescape_all(s.substr(start, pos - start))};
+}
+struct TitleRes {
+    bool ok{false};
+    size_t pos{0};
+    std::string str;
+};
+inline TitleRes parse_link_title(std::string_view s, size_t pos, size_t max) {
+    if (pos >= max) return TitleRes{};
+    const char marker = s[pos];
+    if (marker != '"' && marker != '\'' && marker != '(') return TitleRes{};
+    const char close = (marker == '(') ? ')' : marker;
+    size_t i = pos + 1;
+    for (; i < max;) {
+        if (s[i] == close)
+            return TitleRes{true, i + 1,
+                            unescape_all(s.substr(pos + 1, i - pos - 1))};
+        if (s[i] == '(' && close == ')') return TitleRes{};
+        if (s[i] == '\\' && i + 1 < max) ++i;
+        ++i;
+    }
+    return TitleRes{}; // no closing marker (may continue on next line)
+}
+// markdown-it normalizeLink = mdurl.encode(mdurl.format(mdurl.parse(url,
+// slashes_denote_host=True))): parse strips the URL (case preserved),
+// format is identity for common shapes, encode passes through a-zA-Z0-9
+// and ";/?:@&=+$,-_.!~*'()#", keeps valid %xx sequences, percent-encodes
+// other ASCII, UTF-8 percent-encodes the rest.
+inline std::string normalize_link(std::string_view url) {
+    // mdurl.parse strips the URL before parsing ("  http://foo.com  ").
+    size_t a = 0, b = url.size();
+    auto ws = [](char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; };
+    while (a < b && ws(url[a])) ++a;
+    while (b > a && ws(url[b - 1])) --b;
+    std::string s(url.substr(a, b - a));
+    auto hex = [](unsigned char c) -> std::string {
+        const char* d = "0123456789ABCDEF";
+        std::string r(3, '%');
+        r[1] = d[c >> 4];
+        r[2] = d[c & 0xF];
+        return r;
+    };
+    const char* exc = ";/?:@&=+$,-_.!~*'()#";
+    std::string out;
+    out.reserve(s.size());
+    for (size_t k = 0; k < s.size();) {
+        const unsigned char c = static_cast<unsigned char>(s[k]);
+        if (c == '%' && k + 2 < s.size()) {
+            const char n1 = s[k + 1], n2 = s[k + 2];
+            auto hd = [](char c) {
+                return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+                       (c >= 'A' && c <= 'F');
+            };
+            if (hd(n1) && hd(n2)) {
+                out.append(s.substr(k, 3));
+                k += 3;
+                continue;
+            }
+        }
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') ||
+            std::string_view(exc).find(static_cast<char>(c)) != std::string_view::npos) {
+            out += static_cast<char>(c);
+            ++k;
+            continue;
+        }
+        if (c < 0x80) {
+            out += hex(c);
+            ++k;
+            continue;
+        }
+        out += hex(c); // UTF-8 byte pass
+        ++k;
+    }
+    return out;
+}
+// markdown-it common.normalize_url.validateLink: reject vbscript:/
+// javascript:/file:/data: unless data:image/{gif,png,jpeg,webp};
+inline bool validate_link(std::string_view url) {
+    size_t a = 0, b = url.size();
+    auto ws = [](char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; };
+    while (a < b && ws(url[a])) ++a;
+    while (b > a && ws(url[b - 1])) --b;
+    auto lc = [](char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c; };
+    auto starts_with = [&](const char* p) {
+        const size_t n = std::char_traits<char>::length(p);
+        if (b - a < n) return false;
+        for (size_t k = 0; k < n; ++k)
+            if (lc(url[a + k]) != p[k]) return false;
+        return true;
+    };
+    const bool bad = starts_with("vbscript:") || starts_with("javascript:") ||
+                     starts_with("file:") || starts_with("data:");
+    if (!bad) return true;
+    return starts_with("data:image/gif;") || starts_with("data:image/png;") ||
+           starts_with("data:image/jpeg;") || starts_with("data:image/webp;");
+}
+// markdown-it common.utils.normalizeReference: trim, collapse whitespace,
+// lowercase.
+inline std::string normalize_ref(std::string_view s) {
+    std::string out;
+    bool in_ws = false;
+    for (char c : s) {
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+            in_ws = true;
+            continue;
+        }
+        if (in_ws && !out.empty()) out += ' ';
+        in_ws = false;
+        out += (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
+    }
+    return out;
+}
+// markdown-it table.escapedSplit: split on '|' honoring '\|' escapes.
+inline std::vector<std::string> escaped_split(std::string_view s) {
+    std::vector<std::string> out;
+    size_t last = 0;
+    bool esc = false;
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (esc) {
+            esc = false;
+            continue;
+        }
+        if (s[i] == '\\') {
+            esc = true;
+            continue;
+        }
+        if (s[i] == '|') {
+            out.push_back(std::string(s.substr(last, i - last)));
+            last = i + 1;
+        }
+    }
+    out.push_back(std::string(s.substr(last)));
+    return out;
+}
+
+inline void parse_inline(std::string_view s, std::vector<Tok>& out,
+                         const std::map<std::string, std::string>* refs) {
     size_t pos = 0;
     std::string buf;
     auto flush = [&]() {
@@ -502,7 +693,7 @@ inline void parse_inline(std::string_view s, std::vector<Tok>& out) {
         if (close == std::string_view::npos) return false;
         // Flat markdown-it shape: open, inner tokens, close as siblings.
         out.push_back(Tok{std::string(name) + "_open", name, 1});
-        parse_inline(s.substr(pos + len, close - pos - len), out);
+        parse_inline(s.substr(pos + len, close - pos - len), out, refs);
         out.push_back(Tok{std::string(name) + "_close", name, -1});
         pos = close + len;
         return true;
@@ -510,11 +701,16 @@ inline void parse_inline(std::string_view s, std::vector<Tok>& out) {
     while (pos < s.size()) {
         const char c = s[pos];
         if (c == '\n') {
+            // markdown-it newline rule: trailing spaces before the break are
+            // consumed by the break itself (two+ → hard break, one → soft).
             size_t sp = 0;
             while (sp < buf.size() && buf[buf.size() - 1 - sp] == ' ') ++sp;
+            buf.erase(buf.size() - sp);
             flush();
             out.push_back(Tok{sp >= 2 ? "hardbreak" : "softbreak", "br"});
             ++pos;
+            // Skip heading spaces of the next line.
+            while (pos < s.size() && (s[pos] == ' ' || s[pos] == '\t')) ++pos;
             continue;
         }
         if (c == '\\' && pos + 1 < s.size() && is_escapable(s[pos + 1])) {
@@ -574,25 +770,91 @@ inline void parse_inline(std::string_view s, std::vector<Tok>& out) {
                 else if (s[j] == ']') --depth;
                 ++j;
             }
-            if (depth == 0 && j < s.size() && s[j] == '(') {
-                const size_t cp = s.find(')', j + 1);
-                if (cp != std::string_view::npos) {
-                    flush();
-                    // Flat markdown-it shape: open, inner tokens, close.
-                    Tok open;
-                    open.type = "link_open";
-                    open.tag = "a";
-                    open.nesting = 1;
-                    open.attrs.push_back({"href", std::string(s.substr(j + 1, cp - j - 1))});
-                    out.push_back(std::move(open));
-                    parse_inline(s.substr(pos + 1, j - pos - 2), out);
-                    out.push_back(Tok{"link_close", "a", -1});
-                    pos = cp + 1;
-                    continue;
+            const bool balanced = (depth == 0);
+            bool done = false;
+            const auto emit_link = [&](const std::string& href) {
+                flush();
+                // Flat markdown-it shape: open, inner tokens, close.
+                Tok open;
+                open.type = "link_open";
+                open.tag = "a";
+                open.nesting = 1;
+                open.attrs.push_back({"href", href});
+                out.push_back(std::move(open));
+                parse_inline(s.substr(pos + 1, j - pos - 2), out, refs);
+                out.push_back(Tok{"link_close", "a", -1});
+            };
+            if (balanced && j < s.size() && s[j] == '(') {
+                // Inline link: [label](  <dest>  "title"  ). An empty
+                // destination is valid ([a]() → link with href ""); a missing
+                // ')' falls back to reference parsing.
+                size_t ip = j + 1;
+                while (ip < s.size() &&
+                       (s[ip] == ' ' || s[ip] == '\t' || s[ip] == '\n'))
+                    ++ip;
+                if (ip < s.size()) {
+                    std::string href;
+                    const auto dr = parse_link_dest(s, ip, s.size());
+                    if (dr.ok) {
+                        // markdown-it link rule: normalize, then validate.
+                        // A failing validation aborts the inline link (pos
+                        // stays at the dest, so the ')' check fails below
+                        // and reference parsing is tried).
+                        const std::string norm = normalize_link(dr.str);
+                        if (validate_link(norm)) {
+                            href = norm;
+                            ip = dr.pos;
+                        }
+                    }
+                    const size_t ts = ip;
+                    while (ip < s.size() &&
+                           (s[ip] == ' ' || s[ip] == '\t' || s[ip] == '\n'))
+                        ++ip;
+                    if (ts != ip) {
+                        const auto tr = parse_link_title(s, ip, s.size());
+                        if (tr.ok) ip = tr.pos;
+                    }
+                    while (ip < s.size() &&
+                           (s[ip] == ' ' || s[ip] == '\t' || s[ip] == '\n'))
+                        ++ip;
+                    if (ip < s.size() && s[ip] == ')') {
+                        emit_link(href);
+                        pos = ip + 1;
+                        done = true;
+                    }
                 }
             }
-            buf += '[';
-            ++pos;
+            if (!done && refs != nullptr) {
+                // Link reference: [label][ref], [label][], or [label].
+                // j already points one past ']'.
+                std::string label;
+                size_t ref_end = j; // collapsed / shortcut form
+                if (balanced && j < s.size() && s[j] == '[') {
+                    int d2 = 1;
+                    size_t k = j + 1;
+                    while (k < s.size() && d2 > 0) {
+                        if (s[k] == '[') ++d2;
+                        else if (s[k] == ']') --d2;
+                        ++k;
+                    }
+                    if (d2 == 0) {
+                        label = std::string(s.substr(j + 1, k - j - 2));
+                        ref_end = k;
+                    }
+                }
+                if (label.empty())
+                    label = std::string(s.substr(pos + 1, j - pos - 2));
+                const auto it = refs->find(normalize_ref(label));
+                if (it != refs->end()) {
+                    emit_link(it->second);
+                    pos = ref_end;
+                    done = true;
+                }
+            }
+            if (!done) {
+                buf += '[';
+                ++pos;
+            }
             continue;
         }
         if (c == '*' || c == '_') {
@@ -609,7 +871,7 @@ inline void parse_inline(std::string_view s, std::vector<Tok>& out) {
                     flush();
                     // Flat markdown-it shape: open, inner tokens, close.
                     out.push_back(Tok{"s_open", "s", 1});
-                    parse_inline(s.substr(pos + 2, close - pos - 2), out);
+                    parse_inline(s.substr(pos + 2, close - pos - 2), out, refs);
                     out.push_back(Tok{"s_close", "s", -1});
                     pos = close + 2;
                     continue;
@@ -646,20 +908,26 @@ inline void parse_inline(std::string_view s, std::vector<Tok>& out) {
 struct Parser {
     std::vector<std::string> lines;
     size_t pos{0};
+    // Document-wide link reference definitions ([label]: url). Shared with
+    // nested sub-parsers (markdown-it keeps one env.references per document).
+    std::map<std::string, std::string>* refs{nullptr};
+    // markdown-it blkIndent for the current parse call; all "4 spaces"
+    // thresholds (code, lazy continuation) are relative to it.
+    size_t min_ind{0};
 
     bool bullet_at(std::string_view lc, size_t& marker_len) const {
-        if (lc.size() < 2) return false;
+        if (lc.empty()) return false;
         if (lc[0] != '-' && lc[0] != '+' && lc[0] != '*') return false;
-        if (lc[1] != ' ') return false;
+        if (lc.size() > 1 && lc[1] != ' ') return false; // marker may end the line
         marker_len = 2;
         return true;
     }
     bool ordered_at(std::string_view lc, size_t& marker_len, int& number) const {
         size_t d = 0;
         while (d < lc.size() && d < 9 && lc[d] >= '0' && lc[d] <= '9') ++d;
-        if (d == 0 || d + 1 >= lc.size()) return false;
+        if (d == 0 || d + 1 > lc.size()) return false;
         if (lc[d] != '.' && lc[d] != ')') return false;
-        if (lc[d + 1] != ' ') return false;
+        if (d + 1 < lc.size() && lc[d + 1] != ' ') return false;
         number = 0;
         for (size_t k = 0; k < d; ++k) number = number * 10 + (lc[k] - '0');
         marker_len = d + 1;
@@ -706,70 +974,324 @@ struct Parser {
         return true;
     }
 
-    // Table separator line: |? (:?---:? ...)? with ≥1 cells. Fills `aligns`
-    // with "left"|"center"|"right"|"" (default) per cell.
-    bool table_sep(std::string_view l, std::vector<std::string>& aligns) const {
-        aligns.clear();
-        std::string_view t = strip_trail(l);
-        size_t i = 0;
-        if (i < t.size() && t[i] == '|') ++i;
-        size_t cells = 0;
-        for (;;) {
-            while (i < t.size() && t[i] == ' ') ++i;
-            bool lc_ = (i < t.size() && t[i] == ':');
-            if (lc_) ++i;
-            size_t dashes = 0;
-            while (i < t.size() && t[i] == '-') { ++i; ++dashes; }
-            if (dashes < 1) return false;
-            bool rc_ = (i < t.size() && t[i] == ':');
-            if (rc_) ++i;
-            if (lc_ && rc_)
-                aligns.push_back("center");
-            else if (rc_)
-                aligns.push_back("right");
-            else if (lc_)
-                aligns.push_back("left");
-            else
-                aligns.push_back("");
-            while (i < t.size() && t[i] == ' ') ++i;
-            if (i < t.size() && t[i] == '|') {
-                ++cells;
-                ++i;
-                continue;
+    // markdown-it table rule: the header line is `lines[hline]`; validates the
+    // separator line beneath it. Fills `aligns` ("left"/"center"/"right"/"" per
+    // real cell) and `head_cells` (stripped, '\|'-aware) when valid.
+    bool table_at(size_t hline, std::vector<std::string>* aligns,
+                  std::vector<std::string>* head_cells) const {
+        if (hline + 1 >= lines.size()) return false;
+        const size_t h_ind = lead_spaces(lines[hline]);
+        if (h_ind < min_ind || h_ind - min_ind >= 4) return false;
+        const std::string& l = lines[hline + 1];
+        const size_t sep_ind = lead_spaces(l);
+        if (sep_ind < min_ind || sep_ind - min_ind >= 4) return false;
+        const std::string_view t =
+            std::string_view(l).substr(sep_ind);
+        if (t.size() < 2) return false;
+        // First char '|', '-', ':'; second '|', '-', ':' or space; '-' must not
+        // be followed by a space (list ambiguity).
+        if (t[0] != '|' && t[0] != '-' && t[0] != ':') return false;
+        if (t[1] != '|' && t[1] != '-' && t[1] != ':' && t[1] != ' ')
+            return false;
+        if (t[0] == '-' && t[1] == ' ') return false;
+        for (size_t i = 2; i < t.size(); ++i) {
+            const char ch = t[i];
+            if (ch != '|' && ch != '-' && ch != ':' && ch != ' ') return false;
+        }
+        // Plain '|' split; empty cells only allowed as the first/last column.
+        if (aligns) aligns->clear();
+        {
+            size_t i = 0;
+            for (;;) {
+                const size_t pipe = t.find('|', i);
+                std::string_view c =
+                    (pipe == std::string_view::npos)
+                        ? t.substr(i)
+                        : t.substr(i, pipe - i);
+                size_t a = 0, b = c.size();
+                while (a < b && (c[a] == ' ' || c[a] == '\t')) ++a;
+                while (b > a && (c[b - 1] == ' ' || c[b - 1] == '\t')) --b;
+                const bool empty = (a == b);
+                if (!empty) {
+                    std::string_view cell = c.substr(a, b - a);
+                    size_t k = 0;
+                    const bool lc_ = (k < cell.size() && cell[k] == ':');
+                    if (lc_) ++k;
+                    size_t dashes = 0;
+                    while (k < cell.size() && cell[k] == '-') { ++k; ++dashes; }
+                    const bool rc_ = (k < cell.size() && cell[k] == ':');
+                    if (rc_) ++k;
+                    if (dashes < 1 || k != cell.size()) return false;
+                    if (aligns) {
+                        if (lc_ && rc_)
+                            aligns->push_back("center");
+                        else if (rc_)
+                            aligns->push_back("right");
+                        else if (lc_)
+                            aligns->push_back("left");
+                        else
+                            aligns->push_back("");
+                    }
+                } else if (i != 0 && pipe != std::string_view::npos) {
+                    return false; // empty cell in between
+                }
+                // else: leading/trailing empty column — allowed
+                if (pipe == std::string_view::npos) break;
+                i = pipe + 1;
             }
-            ++cells;
-            break;
         }
-        return cells >= 1;
+        // Header: must contain '|'; cell count must match the separator's.
+        const std::string& hl = lines[hline];
+        std::string_view hv = strip_trail(std::string_view(hl).substr(lead_spaces(hl)));
+        size_t h0 = 0;
+        while (h0 < hv.size() && (hv[h0] == ' ' || hv[h0] == '\t')) ++h0;
+        hv = hv.substr(h0);
+        if (hv.find('|') == std::string_view::npos) return false;
+        auto hc = escaped_split(hv);
+        if (!hc.empty() && hc.front().empty()) hc.erase(hc.begin());
+        if (!hc.empty() && hc.back().empty()) hc.pop_back();
+        if (hc.empty() || (aligns != nullptr && hc.size() != aligns->size()))
+            return false;
+        if (head_cells)
+            for (auto& c : hc) {
+                size_t a = 0, b = c.size();
+                while (a < b && (c[a] == ' ' || c[a] == '\t')) ++a;
+                while (b > a && (c[b - 1] == ' ' || c[b - 1] == '\t')) --b;
+                c = c.substr(a, b - a);
+            }
+        if (head_cells) *head_cells = std::move(hc);
+        return true;
     }
-    static std::vector<std::string> table_cells(std::string_view l) {
-        std::string t(std::string(strip_trail(l)));
-        if (!t.empty() && t.front() == '|') t.erase(0, 1);
-        if (!t.empty() && t.back() == '|') t.pop_back();
-        std::vector<std::string> cells;
-        size_t i = 0;
-        for (;;) {
-            const size_t pipe = t.find('|', i);
-            std::string cell =
-                (pipe == std::string::npos) ? t.substr(i) : t.substr(i, pipe - i);
-            size_t a = 0, b = cell.size();
-            while (a < b && (cell[a] == ' ' || cell[a] == '\t')) ++a;
-            while (b > a && (cell[b - 1] == ' ' || cell[b - 1] == '\t')) --b;
-            cells.push_back(cell.substr(a, b - a));
-            if (pipe == std::string::npos) break;
-            i = pipe + 1;
+    // markdown-it block `reference` rule (single line): [label]: dest "title".
+    // Consumes the definition into `refs`; returns true when it parsed.
+    bool refdef_at(std::string_view lc, std::string& href) {
+        if (lc.empty() || lc[0] != '[') return false;
+        size_t label_end = std::string_view::npos;
+        for (size_t i = 1; i < lc.size(); ++i) {
+            const char ch = lc[i];
+            if (ch == '[') return false;
+            if (ch == ']') {
+                label_end = i;
+                break;
+            }
+            if (ch == '\\' && i + 1 < lc.size()) ++i;
         }
-        return cells;
+        if (label_end == std::string_view::npos || label_end + 1 >= lc.size() ||
+            lc[label_end + 1] != ':')
+            return false;
+        size_t p = label_end + 2;
+        while (p < lc.size() && (lc[p] == ' ' || lc[p] == '\t')) ++p;
+        const auto dr = parse_link_dest(lc, p, lc.size());
+        if (!dr.ok) return false;
+        size_t q = dr.pos;
+        const size_t tstart = q;
+        while (q < lc.size() && (lc[q] == ' ' || lc[q] == '\t')) ++q;
+        if (tstart != q) {
+            const auto tr = parse_link_title(lc, q, lc.size());
+            if (tr.ok) q = tr.pos;
+        }
+        while (q < lc.size() && (lc[q] == ' ' || lc[q] == '\t')) ++q;
+        if (q < lc.size()) return false; // garbage after dest/title
+        const std::string key = normalize_ref(lc.substr(1, label_end - 1));
+        if (key.empty()) return false;
+        href = normalize_link(dr.str);
+        if (!validate_link(href)) return false; // def rejected (markdown-it)
+        if (refs != nullptr && refs->count(key) == 0) (*refs)[key] = href;
+        return true;
+    }
+    // Paragraph terminator set (markdown-it getRules("paragraph")): table,
+    // fence, blockquote, hr, list, heading. `l` is the line index to test.
+    bool paragraph_terminates(size_t l) const {
+        const std::string& line = lines[l];
+        const size_t li = lead_spaces(line);
+        // A would-be code block is a lazy paragraph continuation, not a
+        // terminator. Lines shallower than min_ind still terminate (the
+        // sub-parser then stops at them via the min-indent check).
+        if (li >= min_ind && li - min_ind >= 4) return false;
+        const std::string_view lc = std::string_view(line).substr(li);
+        if (lc.empty()) return false;
+        if (lc[0] == '>') return true;
+        char f2 = 0;
+        size_t f2n = 0;
+        std::string fi;
+        if (fence_at(lc, f2, f2n, fi)) return true;
+        int lv = 0;
+        std::string ht;
+        if (heading_at(lc, lv, ht)) return true;
+        if (hr_at(lc)) return true;
+        size_t m = 0;
+        int n2 = 0;
+        if (bullet_at(lc, m) || ordered_at(lc, m, n2)) return true;
+        if (lc.find('|') != std::string_view::npos)
+            return table_at(l, nullptr, nullptr);
+        return false;
+    }
+    // markdown-it lheading rule: scan forward from the paragraph start (pos)
+    // for a setext underline ('=' → h1, '-' → h2).
+    bool setext_scan(int& level, size_t& end) const {
+        size_t nl = pos + 1;
+        while (nl < lines.size()) {
+            const std::string& l = lines[nl];
+            if (is_blank(l)) break;
+            const size_t li = lead_spaces(l);
+            if (li >= min_ind && li - min_ind > 3) {
+                ++nl;
+                continue; // lazy continuation
+            }
+            if (li >= min_ind) {
+                const std::string_view lc = std::string_view(l).substr(li);
+                if (!lc.empty() && (lc[0] == '=' || lc[0] == '-')) {
+                    size_t k = 1;
+                    while (k < lc.size() && lc[k] == lc[0]) ++k;
+                    while (k < lc.size() && (lc[k] == ' ' || lc[k] == '\t')) ++k;
+                    if (k >= lc.size()) {
+                        level = (lc[0] == '=') ? 1 : 2;
+                        end = nl;
+                        return true;
+                    }
+                }
+            }
+            if (paragraph_terminates(nl)) break;
+            ++nl;
+        }
+        return false;
     }
 
+    // Table body terminator set (markdown-it getRules("blockquote")):
+    // fence, blockquote, hr, list, heading — not table.
+    bool table_row_terminates(size_t l) const {
+        const std::string& line = lines[l];
+        const size_t li = lead_spaces(line);
+        if (li >= min_ind && li - min_ind >= 4) return false;
+        const std::string_view lc = std::string_view(line).substr(li);
+        if (lc.empty()) return false;
+        if (lc[0] == '>') return true;
+        char f2 = 0;
+        size_t f2n = 0;
+        std::string fi;
+        if (fence_at(lc, f2, f2n, fi)) return true;
+        int lv = 0;
+        std::string ht;
+        if (heading_at(lc, lv, ht)) return true;
+        if (hr_at(lc)) return true;
+        size_t m = 0;
+        int n2 = 0;
+        return bullet_at(lc, m) || ordered_at(lc, m, n2);
+    }
+    void emit_table(size_t hline, const std::vector<std::string>& aligns,
+                    const std::vector<std::string>& head,
+                    std::vector<Tok>& out) {
+        out.push_back(Tok{"table_open", "table", 1});
+        {
+            Tok thead{"thead_open", "thead", 1};
+            Tok tr{"tr_open", "tr", 1};
+            for (size_t i = 0; i < head.size(); ++i) {
+                Tok th{"th_open", "th", 1};
+                if (i < aligns.size() && !aligns[i].empty())
+                    th.attrs.push_back({"style", "text-align:" + aligns[i]});
+                Tok inl{"inline", "", 0, head[i]};
+                tr.children.push_back(std::move(th));
+                tr.children.push_back(std::move(inl));
+                tr.children.push_back(Tok{"th_close", "th", -1});
+            }
+            thead.children.push_back(std::move(tr));
+            thead.children.push_back(Tok{"tr_close", "tr", -1});
+            out.push_back(std::move(thead));
+            out.push_back(Tok{"thead_close", "thead", -1});
+        }
+        Tok tbody{"tbody_open", "tbody", 1};
+        bool any_body = false;
+        size_t row = hline + 2;
+        while (row < lines.size()) {
+            const std::string& l = lines[row];
+            if (is_blank(l)) break;
+            const size_t li = lead_spaces(l);
+            if (li < min_ind || li - min_ind >= 4) break;
+            if (table_row_terminates(row)) break;
+            std::string_view lt =
+                strip_trail(std::string_view(l).substr(li));
+            size_t a = 0;
+            while (a < lt.size() && (lt[a] == ' ' || lt[a] == '\t')) ++a;
+            lt = lt.substr(a);
+            if (lt.empty()) break;
+            if (!any_body) any_body = true;
+            auto cells = escaped_split(lt);
+            if (!cells.empty() && cells.front().empty())
+                cells.erase(cells.begin());
+            if (!cells.empty() && cells.back().empty()) cells.pop_back();
+            Tok r{"tr_open", "tr", 1};
+            for (size_t i = 0; i < head.size(); ++i) {
+                Tok td{"td_open", "td", 1};
+                if (i < aligns.size() && !aligns[i].empty())
+                    td.attrs.push_back({"style", "text-align:" + aligns[i]});
+                std::string cell;
+                if (i < cells.size()) {
+                    cell = cells[i];
+                    size_t c0 = 0, c1 = cell.size();
+                    while (c0 < c1 && (cell[c0] == ' ' || cell[c0] == '\t'))
+                        ++c0;
+                    while (c1 > c0 && (cell[c1 - 1] == ' ' || cell[c1 - 1] == '\t'))
+                        --c1;
+                    cell = cell.substr(c0, c1 - c0);
+                }
+                Tok inl{"inline", "", 0, cell};
+                r.children.push_back(std::move(td));
+                r.children.push_back(std::move(inl));
+                r.children.push_back(Tok{"td_close", "td", -1});
+            }
+            tbody.children.push_back(std::move(r));
+            tbody.children.push_back(Tok{"tr_close", "tr", -1});
+            ++row;
+        }
+        if (any_body) {
+            out.push_back(std::move(tbody));
+            out.push_back(Tok{"tbody_close", "tbody", -1});
+        }
+        out.push_back(Tok{"table_close", "table", -1});
+        pos = row;
+    }
     void parse_blocks(size_t min_indent, std::vector<Tok>& out) {
+        min_ind = min_indent;
         while (pos < lines.size()) {
             const std::string& line = lines[pos];
             if (is_blank(line)) { ++pos; continue; }
             const size_t ind = lead_spaces(line);
-            if (ind < min_indent) return;
+            if (ind < min_indent) return; // nested-call termination (item/bq)
             const std::string_view content = std::string_view(line).substr(ind);
+            const bool rel_code = (ind - min_indent >= 4);
 
+            // table (markdown-it tries it first)
+            if (!rel_code && content.find('|') != std::string_view::npos) {
+                std::vector<std::string> aligns, head;
+                if (table_at(pos, &aligns, &head)) {
+                    emit_table(pos, aligns, head, out);
+                    continue;
+                }
+            }
+            // indented code block (before fence: an indented fence is code)
+            if (rel_code) {
+                const size_t code_col = min_indent + 4;
+                std::string code;
+                while (pos < lines.size()) {
+                    const std::string& l = lines[pos];
+                    if (is_blank(l)) {
+                        size_t k = pos + 1;
+                        while (k < lines.size() && is_blank(lines[k])) ++k;
+                        if (k < lines.size() && lead_spaces(lines[k]) >= code_col) {
+                            code += "\n";
+                            ++pos;
+                            continue;
+                        }
+                        break;
+                    }
+                    if (lead_spaces(l) < code_col) break;
+                    code += l.substr(std::min<size_t>(code_col, lead_spaces(l)));
+                    code += "\n";
+                    ++pos;
+                }
+                out.push_back(Tok{"code_block", "code", 0, std::move(code)});
+                continue;
+            }
             // fence
             char fch = 0;
             size_t fn = 0;
@@ -795,15 +1317,22 @@ struct Parser {
                 out.push_back(Tok{"fence", "code", 0, std::move(code), finfo});
                 continue;
             }
-            // heading
+            // reference definition ([label]: url "title") — consumes the line
+            if (!rel_code) {
+                std::string href;
+                if (refdef_at(content, href)) {
+                    ++pos;
+                    continue;
+                }
+            }
+            // heading (ATX)
             int level = 0;
             std::string htext;
-            if (ind < 4 && heading_at(content, level, htext)) {
+            if (!rel_code && heading_at(content, level, htext)) {
                 // markdown-it shape: heading_open has no children; the inline
                 // token (with the parsed children) is a sibling.
                 Tok open{"heading_open", "h" + std::to_string(level), 1};
                 Tok inl{"inline", "", 0, htext};
-                parse_inline(htext, inl.children);
                 out.push_back(std::move(open));
                 out.push_back(std::move(inl));
                 out.push_back(Tok{"heading_close", "h" + std::to_string(level), -1});
@@ -811,7 +1340,7 @@ struct Parser {
                 continue;
             }
             // hr
-            if (ind < 4 && hr_at(content)) {
+            if (!rel_code && hr_at(content)) {
                 out.push_back(Tok{"hr", "hr"});
                 ++pos;
                 continue;
@@ -835,6 +1364,7 @@ struct Parser {
                     Parser sub;
                     sub.lines = std::move(inner);
                     sub.pos = 0;
+                    sub.refs = refs;
                     sub.parse_blocks(0, open.children);
                 }
                 out.push_back(std::move(open));
@@ -846,173 +1376,103 @@ struct Parser {
             int ord_num = 0;
             const bool bullet = bullet_at(content, marker_len);
             const bool ordered = !bullet && ordered_at(content, marker_len, ord_num);
-            if ((bullet || ordered) && ind < 4) {
+            if ((bullet || ordered) && !rel_code) {
                 Tok list_open{ordered ? "ordered_list_open" : "bullet_list_open",
                              ordered ? "ol" : "ul", 1};
                 if (ordered) list_open.attrs.push_back({"start", std::to_string(ord_num)});
                 out.push_back(std::move(list_open));
-                // Content column: after the marker. bullet_at's marker_len
-                // includes the trailing space; ordered_at's does not (the
-                // space after "." is content_col - ind).
-                const size_t content_col = ind + marker_len + (ordered ? 1 : 0);
+                const char item_marker = ordered ? content[marker_len - 1] : content[0];
                 for (;;) {
-                    if (pos >= lines.size() || is_blank(lines[pos])) break;
-                    const std::string_view l = lines[pos];
-                    const size_t li = lead_spaces(l);
-                    if (li != ind) break;
-                    const std::string_view lc = l.substr(li);
+                    // Item marker line (the outer checks below re-validate pos).
+                    const std::string& il = lines[pos];
+                    const size_t iind = lead_spaces(il);
+                    const std::string_view ilc = std::string_view(il).substr(iind);
                     size_t ml = 0;
                     int num = 0;
-                    const bool is_item =
-                        bullet ? bullet_at(lc, ml) : ordered_at(lc, ml, num);
-                    if (!is_item) break;
-                    std::string_view first = lc.substr(ordered ? ml + 1 : ml);
-                    std::vector<std::string> item_lines{std::string(first)};
-                    ++pos;
-                    while (pos < lines.size() && !is_blank(lines[pos])) {
-                        const std::string_view n = lines[pos];
-                        const size_t ni = lead_spaces(n);
-                        const std::string_view nc = n.substr(ni);
-                        size_t nml = 0;
-                        int nnum = 0;
-                        if (ni == ind &&
-                            (bullet ? bullet_at(nc, nml) : ordered_at(nc, nml, nnum)))
-                            break; // next item
-                        if (ni < content_col) break;
-                        item_lines.push_back(std::string(n.substr(content_col)));
-                        ++pos;
-                    }
+                    bullet ? bullet_at(ilc, ml) : ordered_at(ilc, ml, num);
+                    // markdown-it list item geometry:
+                    //   initial       = column just after the marker
+                    //   content_start = column after the marker's spaces
+                    //   blkIndent     = initial + min(spaces_after_marker, 4),
+                    //                   capped to 1 when > 4 spaces
+                    const size_t initial = iind + (bullet ? 1 : ml);
+                    size_t cstart = initial;
+                    while (cstart < il.size() && il[cstart] == ' ') ++cstart;
+                    size_t iam = (cstart >= il.size()) ? 1 : (cstart - initial);
+                    if (iam > 4) iam = 1;
+                    const size_t item_blk = initial + iam;
+                    // Re-parse the item's lines as a sub-document (markdown-it
+                    // runs the block tokenizer recursively with blkIndent =
+                    // item indent); the marker prefix becomes spaces so the
+                    // sub-parser sees the content at its true column.
+                    std::vector<std::string> sub_lines(lines);
+                    sub_lines[pos] =
+                        std::string(cstart, ' ') + std::string(il.substr(cstart));
                     Tok li_tok{"list_item_open", "li", 1};
                     if (ordered) li_tok.info = std::to_string(num);
                     {
-                        // paragraph = first line + lazy continuations; then
-                        // nested blocks from the remaining lines.
-                        std::vector<std::string> para;
-                        std::vector<std::string> rest;
-                        para.push_back(item_lines[0]);
-                        for (size_t k = 1; k < item_lines.size(); ++k) {
-                            const std::string& it = item_lines[k];
-                            if (is_blank(it)) { rest.push_back(it); continue; }
-                            const size_t ri = lead_spaces(it);
-                            const std::string_view rc = std::string_view(it).substr(ri);
-                            bool block_start = false;
-                            if (ri >= 4) {
-                                block_start = true; // indented code
-                            } else if (!rc.empty()) {
-                                size_t m2 = 0;
-                                int n2 = 0;
-                                int lv = 0;
-                                std::string ht;
-                                char f2 = 0;
-                                size_t f2n = 0;
-                                std::string fi;
-                                if (rc[0] == '>' || bullet_at(rc, m2) ||
-                                    ordered_at(rc, m2, n2) || heading_at(rc, lv, ht) ||
-                                    hr_at(rc) || fence_at(rc, f2, f2n, fi))
-                                    block_start = true;
-                            }
-                            if (block_start)
-                                rest.push_back(it);
-                            else
-                                para.push_back(it);
-                        }
-                        std::string joined;
-                        for (size_t k = 0; k < para.size(); ++k) {
-                            if (k) joined += "\n";
-                            joined += para[k];
-                        }
-                        Tok p_open{"paragraph_open", "p", 1};
-                        Tok inl{"inline", "", 0, joined};
-                        parse_inline(joined, inl.children);
-                        li_tok.children.push_back(std::move(p_open));
-                        li_tok.children.push_back(std::move(inl));
-                        li_tok.children.push_back(Tok{"paragraph_close", "p", -1});
-                        if (!rest.empty()) {
-                            Parser sub;
-                            sub.lines = std::move(rest);
-                            sub.pos = 0;
-                            sub.parse_blocks(0, li_tok.children);
-                        }
+                        Parser sub;
+                        sub.lines = std::move(sub_lines);
+                        sub.pos = pos;
+                        sub.refs = refs;
+                        sub.parse_blocks(item_blk, li_tok.children);
+                        pos = sub.pos;
                     }
                     out.push_back(std::move(li_tok));
                     out.push_back(Tok{"list_item_close", "li", -1});
+                    // List loop: terminate or find the next item.
+                    if (pos >= lines.size()) break;
+                    {
+                        const std::string& nl = lines[pos]; // non-blank (sub skips blanks)
+                        const size_t ni = lead_spaces(nl);
+                        if (ni < min_indent) break;
+                        if (ni - min_indent >= 4) break; // code block ends the list
+                        const std::string_view nlc = std::string_view(nl).substr(ni);
+                        char f2 = 0;
+                        size_t f2n = 0;
+                        std::string fi;
+                        if (nlc[0] == '>' || fence_at(nlc, f2, f2n, fi) ||
+                            hr_at(nlc))
+                            break; // list terminators: fence, blockquote, hr
+                        size_t nml = 0;
+                        int nnum = 0;
+                        const bool nitem =
+                            bullet ? bullet_at(nlc, nml) : ordered_at(nlc, nml, nnum);
+                        if (!nitem) break;
+                        const char nmc = ordered ? nlc[nml - 1] : nlc[0];
+                        if (nmc != item_marker) break; // marker char change → new list
+                    }
                 }
                 out.push_back(Tok{ordered ? "ordered_list_close" : "bullet_list_close",
                                   ordered ? "ol" : "ul", -1});
                 continue;
             }
-            // table
-            if (ind < 4 && content.find('|') != std::string_view::npos &&
-                pos + 1 < lines.size()) {
-                std::vector<std::string> aligns;
-                if (table_sep(lines[pos + 1], aligns)) {
-                    auto head = table_cells(content);
-                    out.push_back(Tok{"table_open", "table", 1});
-                    Tok thead{"thead_open", "thead", 1};
-                    Tok tr{"tr_open", "tr", 1};
-                    for (size_t i = 0; i < head.size(); ++i) {
-                        Tok th{"th_open", "th", 1};
-                        if (i < aligns.size() && !aligns[i].empty())
-                            th.attrs.push_back({"style", "text-align:" + aligns[i]});
-                        Tok inl{"inline", "", 0, head[i]};
-                        parse_inline(head[i], inl.children);
-                        tr.children.push_back(std::move(th));
-                        tr.children.push_back(std::move(inl));
-                        tr.children.push_back(Tok{"th_close", "th", -1});
+            // setext heading (lheading): paragraph line(s) + '=' or '-' line.
+            // Tried after lists (markdown-it order: list before lheading), so
+            // a list marker line wins over a setext marker on the same line.
+            if (!rel_code) {
+                int sl = 0;
+                size_t send = pos;
+                if (setext_scan(sl, send)) {
+                    std::string stext;
+                    for (size_t k = pos; k < send; ++k) {
+                        if (k > pos) stext += "\n";
+                        stext += lines[k];
                     }
-                    thead.children.push_back(std::move(tr));
-                    thead.children.push_back(Tok{"tr_close", "tr", -1});
-                    out.push_back(std::move(thead));
-                    out.push_back(Tok{"thead_close", "thead", -1});
-                    Tok tbody{"tbody_open", "tbody", 1};
-                    pos += 2;
-                    while (pos < lines.size() && !is_blank(lines[pos]) &&
-                           lines[pos].find('|') != std::string::npos) {
-                        auto row = table_cells(lines[pos]);
-                        row.resize(head.size());
-                        Tok r{"tr_open", "tr", 1};
-                        for (size_t i = 0; i < row.size(); ++i) {
-                            Tok td{"td_open", "td", 1};
-                            if (i < aligns.size() && !aligns[i].empty())
-                                td.attrs.push_back({"style", "text-align:" + aligns[i]});
-                            Tok inl{"inline", "", 0, row[i]};
-                            parse_inline(row[i], inl.children);
-                            r.children.push_back(std::move(td));
-                            r.children.push_back(std::move(inl));
-                            r.children.push_back(Tok{"td_close", "td", -1});
-                        }
-                        tbody.children.push_back(std::move(r));
-                        tbody.children.push_back(Tok{"tr_close", "tr", -1});
-                        ++pos;
-                    }
-                    out.push_back(std::move(tbody));
-                    out.push_back(Tok{"tbody_close", "tbody", -1});
-                    out.push_back(Tok{"table_close", "table", -1});
+                    stext = std::string(strip_trail(stext));
+                    size_t b0 = 0;
+                    while (b0 < stext.size() &&
+                           (stext[b0] == ' ' || stext[b0] == '\t'))
+                        ++b0;
+                    stext = stext.substr(b0);
+                    Tok open{"heading_open", "h" + std::to_string(sl), 1};
+                    Tok inl{"inline", "", 0, stext};
+                    out.push_back(std::move(open));
+                    out.push_back(std::move(inl));
+                    out.push_back(Tok{"heading_close", "h" + std::to_string(sl), -1});
+                    pos = send + 1;
                     continue;
                 }
-            }
-            // indented code block
-            if (ind >= 4) {
-                std::string code;
-                while (pos < lines.size()) {
-                    const std::string& l = lines[pos];
-                    if (is_blank(l)) {
-                        size_t k = pos + 1;
-                        while (k < lines.size() && is_blank(lines[k])) ++k;
-                        if (k < lines.size() && lead_spaces(lines[k]) >= 4) {
-                            code += "\n";
-                            ++pos;
-                            continue;
-                        }
-                        break;
-                    }
-                    if (lead_spaces(l) < 4) break;
-                    code += l.substr(std::min<size_t>(4, lead_spaces(l)));
-                    code += "\n";
-                    ++pos;
-                }
-                out.push_back(Tok{"code_block", "code", 0, std::move(code)});
-                continue;
             }
             // paragraph (else)
             {
@@ -1020,21 +1480,17 @@ struct Parser {
                 ++pos;
                 for (;;) {
                     if (pos >= lines.size() || is_blank(lines[pos])) break;
-                    const std::string_view l = lines[pos];
-                    const size_t li = lead_spaces(l);
-                    if (li >= 4) break;
-                    const std::string_view lc = l.substr(li);
-                    size_t m = 0;
-                    int n2 = 0;
-                    int lv = 0;
-                    std::string ht;
-                    char f2 = 0;
-                    size_t f2n = 0;
-                    std::string fi;
-                    if (lc[0] == '>' || bullet_at(lc, m) || ordered_at(lc, m, n2) ||
-                        heading_at(lc, lv, ht) || hr_at(lc) || fence_at(lc, f2, f2n, fi))
-                        break;
-                    para.push_back(std::string(lc));
+                    const size_t li = lead_spaces(lines[pos]);
+                    if (li >= min_indent && li - min_indent > 3) {
+                        // Lazy continuation (would be a code block on its own).
+                        para.push_back(
+                            std::string(std::string_view(lines[pos]).substr(li)));
+                        ++pos;
+                        continue;
+                    }
+                    if (paragraph_terminates(pos)) break;
+                    para.push_back(std::string(
+                        std::string_view(lines[pos]).substr(li)));
                     ++pos;
                 }
                 std::string joined;
@@ -1044,7 +1500,6 @@ struct Parser {
                 }
                 Tok p_open{"paragraph_open", "p", 1};
                 Tok inl{"inline", "", 0, joined};
-                parse_inline(joined, inl.children);
                 out.push_back(std::move(p_open));
                 out.push_back(std::move(inl));
                 out.push_back(Tok{"paragraph_close", "p", -1});
@@ -1052,6 +1507,18 @@ struct Parser {
         }
     }
 };
+
+// Deferred inline pass: markdown-it tokenizes inline content only after the
+// whole block stream is built (so reference links see every definition,
+// including forward ones).
+inline void parse_inlines(std::vector<Tok>& toks,
+                          const std::map<std::string, std::string>& refs) {
+    for (auto& t : toks) {
+        if (t.type == "inline" && !t.content.empty() && t.children.empty())
+            parse_inline(t.content, t.children, &refs);
+        parse_inlines(t.children, refs);
+    }
+}
 
 inline std::vector<Tok> parse_blocks(std::string_view doc) {
     std::vector<std::string> lines;
@@ -1066,10 +1533,13 @@ inline std::vector<Tok> parse_blocks(std::string_view doc) {
         if (nl == std::string_view::npos) break;
         i = nl + 1;
     }
+    std::map<std::string, std::string> refs;
     Parser p;
     p.lines = std::move(lines);
+    p.refs = &refs;
     std::vector<Tok> out;
     p.parse_blocks(0, out);
+    parse_inlines(out, refs);
     return out;
 }
 

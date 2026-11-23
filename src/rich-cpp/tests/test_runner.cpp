@@ -406,6 +406,65 @@ int main(int argc, char* argv[]) {
         mc.print(rich::markdown::markdown(doc, false));
         std::cout << mc.export_text();
         return 0;
+    } else if (test_name == "markdown_extras") {
+        rich::ConsoleOptions m_opts{.width = 60, .record = true, .legacy_windows = false};
+        rich::Console mc(oss, m_opts);
+        const std::string doc = "Alpha\n"
+                                "===\n"
+                                "\n"
+                                "Beta\n"
+                                "---\n"
+                                "\n"
+                                "See [docs][x] and [y][] then [z]\n"
+                                "\n"
+                                "[x]: https://ex.com/a \"T\"\n"
+                                "[y]: https://ex.com/b\n"
+                                "[z]: https://ex.com/c\n"
+                                "\n"
+                                "After\n"
+                                "\n"
+                                "- [ ] open\n"
+                                "- [x] done\n"
+                                "* [X] caps\n"
+                                "\n"
+                                "Text[^1] more.\n"
+                                "\n"
+                                "[^1]: The definition.\n"
+                                "\n"
+                                "| A | B | C |\n"
+                                "|:--|--:|:-:|\n"
+                                "| 1 | 2 | 3 |\n"
+                                "\n"
+                                "A\n"
+                                "=== x\n"
+                                "\n"
+                                "A\n"
+                                "-\n"
+                                "B\n"
+                                "\n"
+                                "Fwd [fwd] end\n"
+                                "\n"
+                                "[fwd]: https://f.io\n"
+                                "\n"
+                                "Edges [e1]( b ) [e2](<a b>) [e3](b [c]) [e4]()\n"
+                                "\n"
+                                "1. one\n"
+                                "2) two\n"
+                                "\n"
+                                "- loose\n"
+                                "\n"
+                                "  cont\n"
+                                "\n"
+                                "A | B\n"
+                                "-- | --\n"
+                                "1 | 2\n"
+                                "\n"
+                                "| a\\|b | c |\n"
+                                "|---|---|\n"
+                                "| 1 | 2 |\n";
+        mc.print(rich::markdown::markdown(doc, false));
+        std::cout << mc.export_text();
+        return 0;
     } else if (test_name == "progress_bar_basic") {
         rich::ConsoleOptions p_opts{.width = 60, .record = true, .legacy_windows = false};
         rich::Console pc(oss, p_opts);
@@ -498,12 +557,12 @@ int main(int argc, char* argv[]) {
             o.line_no = line;
             return o;
         };
-        lc.log({std::string_view("hello world"), std::string_view("42")}, lo(332));
-        lc.log({std::string_view("hello world"), std::string_view("42")}, lo(333));
-        lc.log({std::string_view("[red]styled[/] message")}, lo(334));
+        lc.log({std::string_view("hello world"), std::string_view("42")}, lo(392));
+        lc.log({std::string_view("hello world"), std::string_view("42")}, lo(393));
+        lc.log({std::string_view("[red]styled[/] message")}, lo(394));
         const std::string fifty(50, 'a');
-        lc.log({std::string_view(fifty)}, lo(335));
-        lc.log({}, lo(336));
+        lc.log({std::string_view(fifty)}, lo(395));
+        lc.log({}, lo(396));
         std::cout << lc.export_text();
         return 0;
     } else if (test_name == "log_sgr") {

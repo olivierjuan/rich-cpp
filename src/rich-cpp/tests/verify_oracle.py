@@ -35,6 +35,7 @@ TEST_CASES = [
     "json_basic",
     "syntax_basic",
     "markdown_basic",
+    "markdown_extras",
     "progress_bar_basic",
     "markup_basic",
     "padding_basic",

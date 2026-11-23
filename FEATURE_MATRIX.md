@@ -62,7 +62,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | `Pretty` struct introspection | `rich.pretty` | — | 🚫 Not portable | 🚫 | No `__rich_repr__`-style runtime field introspection in C++; containers/scalars are covered (see Pretty row) |
 | | `Pretty` `ReprHighlighter` coloring | `rich.pretty`, `rich.highlighter` | `rich::pretty` (ReprHighlighter spans + `repr.*` styles) | ✅ Done | ✅ Yes | Repr token spans (braces/numbers/strings/bools/None/ellipsis) colored with Python's `default_styles` `repr.*` entries (bold/italic/cyan/green/magenta/bright, dim+green indent guides); oracle `pretty_sgr` (raw SGR, byte-exact) |
 | | `Syntax` extended coverage: 69 Pygments regex lexers ported as generated data + native JSON lexer (5 stateful lexers excluded: yaml/ruby/http/crystal/postgresql — LexerContext callbacks not data-representable), 32 themes, `line_numbers`, `start_line`, `word_wrap`, `tab_size`, `line_range`, `highlight_lines`, `code_width`, `indent_guides`, `dedent`, `background_color` | `rich.syntax` | `rich::highlight::Syntax` + `highlight/Pygments.h` engine + generated tables | ✅ Done | ✅ Yes | Oracle `syntax_extras` (truecolor SGR: 14 lexers, 6 themes, full option surface, unknown-lexer fallback) |
-| | `Markdown` extras: task-list checkboxes, footnotes, reference-style links, table column alignment, setext (`==`) headings | `rich.markdown` | — | ❌ Not Started | ❌ No | Fenced code blocks *do* get `Syntax` highlighting (language detected from the fence info string) |
+| | `Markdown` extras: task-list checkboxes, footnotes, reference-style links, table column alignment, setext (`==`) headings | `rich.markdown` | `rich::markdown::Markdown` | ✅ Done | ✅ Yes | Markdown-it parity (strikethrough+table preset): reference links (short/collapsed/fwd, label normalization, mdurl `normalizeLink`/`validateLink` href handling), setext H1/H2 incl. edge garbage, table alignment (left/right/center, header-only, no-outer-pipe, escaped pipes), task-list boxes/footnotes as plain text, markdown-it list geometry (item indent, loose lists, marker-change splits, lazy continuation); oracle `markdown_extras` |
 | | `filesize()` / `Number` renderables | `rich.filesize`, `rich.numbers` | — | ❌ Not Started | ❌ No | Unit-formatted sizes (decimal/binary); numbers with digit grouping + alignment |
 | **System & Platform** | Windows VT / UTF-8 auto-init | `rich._windows` | `rich::platform::enable_vt` | ✅ Done | ✅ Yes | Automatic `CP_UTF8` and `ENABLE_VIRTUAL_TERMINAL_PROCESSING` |
 | | Auto terminal size detection | `rich.console` | `detect_terminal_width` | ✅ Done | 🚫 | Windows CSBI (`GetConsoleScreenBufferInfo`) + POSIX `ioctl`; value depends on the live terminal, not reproducible in CI |
@@ -87,7 +87,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 - 🚫 — oracle impossible: nondeterministic output (Traceback addresses/symbols), live-environment state (terminal size), interactive I/O (`Console.input()`), or not portable to C++. (Wall-clock timestamps are oracle-able via clock injection — see `Console.log()`.)
 
 ### Coverage summary
-- **59 oracle cases** (59/59 byte-exact) cover every deterministic ✅ row.
-- **2 rows ❌ Not Started** — portable but not implemented (`Markdown` extras; `filesize()`/`Number` renderables).
+- **60 oracle cases** (60/60 byte-exact) cover every deterministic ✅ row.
+- **1 row ❌ Not Started** — portable but not implemented (`filesize()`/`Number` renderables).
 - **5 rows 🚫** (Status) — `scope()`, self-diagnostics/inspection, Jupyter/IPython, `logging` handler, `Pretty` struct introspection.
 - **8 rows 🚫** (Oracle column) — Traceback, terminal-size detection, `Console.input()`, + the 5 not-portable rows: byte-exact verification not possible.

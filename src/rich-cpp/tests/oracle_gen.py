@@ -255,6 +255,66 @@ def generate_python_oracle(test_name: str) -> str:
         c2 = Console(file=sink, width=60, record=True, legacy_windows=False)
         c2.print(Markdown(doc, hyperlinks=False))
         return c2.export_text()
+    elif test_name == "markdown_extras":
+        from rich.markdown import Markdown
+        doc = (
+            "Alpha\n"
+            "===\n"
+            "\n"
+            "Beta\n"
+            "---\n"
+            "\n"
+            "See [docs][x] and [y][] then [z]\n"
+            "\n"
+            "[x]: https://ex.com/a \"T\"\n"
+            "[y]: https://ex.com/b\n"
+            "[z]: https://ex.com/c\n"
+            "\n"
+            "After\n"
+            "\n"
+            "- [ ] open\n"
+            "- [x] done\n"
+            "* [X] caps\n"
+            "\n"
+            "Text[^1] more.\n"
+            "\n"
+            "[^1]: The definition.\n"
+            "\n"
+            "| A | B | C |\n"
+            "|:--|--:|:-:|\n"
+            "| 1 | 2 | 3 |\n"
+            "\n"
+            "A\n"
+            "=== x\n"
+            "\n"
+            "A\n"
+            "-\n"
+            "B\n"
+            "\n"
+            "Fwd [fwd] end\n"
+            "\n"
+            "[fwd]: https://f.io\n"
+            "\n"
+            "Edges [e1]( b ) [e2](<a b>) [e3](b [c]) [e4]()\n"
+            "\n"
+            "1. one\n"
+            "2) two\n"
+            "\n"
+            "- loose\n"
+            "\n"
+            "  cont\n"
+            "\n"
+            "A | B\n"
+            "-- | --\n"
+            "1 | 2\n"
+            "\n"
+            "| a\\|b | c |\n"
+            "|---|---|\n"
+            "| 1 | 2 |\n"
+        )
+        c2 = Console(file=sink, width=60, record=True, legacy_windows=False)
+        c2.print(Markdown(doc, hyperlinks=False))
+        return c2.export_text()
     elif test_name == "progress_bar_basic":
         # Reference rendering of rich::progress::ProgressBar (green fill /
         # dim empty / cyan percentage) via rich markup, at several fill
