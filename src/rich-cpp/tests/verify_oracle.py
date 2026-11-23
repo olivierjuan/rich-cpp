@@ -55,6 +55,7 @@ TEST_CASES = [
     "table_extras",
     "panel_extras",
     "rule_extras",
+    "tree_extras",
 ]
 
 import os

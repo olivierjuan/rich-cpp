@@ -984,6 +984,66 @@ int main(int argc, char* argv[]) {
         rc.print(rich::AnyRenderable(rich::Rule{std::string("Mix"), 0, "--", "green"}));
         std::cout << r_oss.str();
         return 0;
+    } else if (test_name == "tree_extras") {
+        // guide_style / expanded / hide_root — raw SGR (guide colors are
+        // byte-visible; theme tree/tree.line are null on both sides).
+        std::ostringstream t_oss;
+        rich::ConsoleOptions t_opts{.width = 60, .height = 25, .record = false,
+                                    .legacy_windows = false,
+                                    .force_terminal = true,
+                                    .color_system = rich::ColorSystem::Truecolor,
+                                    .no_color = false};
+        rich::Console tc(t_oss, t_opts);
+        using TO = rich::tree::Tree::Options;
+        {
+            rich::tree::Tree t(std::string("root"));
+            auto& a = t.add(std::string("alpha"));
+            a.add(std::string("alpha-1"));
+            a.add(std::string("alpha-2"));
+            t.add(std::string("beta"));
+            t.add(std::string("gamma"));
+            tc.print(rich::AnyRenderable(t));
+        }
+        {
+            rich::tree::Tree t(std::string("root"), TO{.guide_style = std::string("red")});
+            t.add(std::string("a"));
+            t.add(std::string("b"));
+            tc.print(rich::AnyRenderable(t));
+        }
+        {
+            rich::tree::Tree t(std::string("root"), TO{.guide_style = std::string("bold")});
+            t.add(std::string("a")).add(std::string("a-1"));
+            t.add(std::string("b"));
+            tc.print(rich::AnyRenderable(t));
+        }
+        {
+            rich::tree::Tree t(std::string("root"));
+            auto& a = t.add(std::string("alpha"), TO{.expanded = false});
+            a.add(std::string("hidden-1"));
+            a.add(std::string("hidden-2"));
+            t.add(std::string("beta"));
+            tc.print(rich::AnyRenderable(t));
+        }
+        {
+            rich::tree::Tree t(std::string("root"), TO{.hide_root = true});
+            t.add(std::string("a"));
+            t.add(std::string("b"));
+            tc.print(rich::AnyRenderable(t));
+        }
+        {
+            rich::tree::Tree t(std::string("[bold]root[/]"), TO{.style = std::string("green")});
+            auto& c1 = t.add(std::string("child"), TO{.guide_style = std::string("magenta")});
+            c1.add(std::string("grand"));
+            t.add(std::string("leaf"));
+            tc.print(rich::AnyRenderable(t));
+        }
+        {
+            rich::tree::Tree t(std::string("only"));
+            t.add(std::string("kid"));
+            tc.print(rich::AnyRenderable(t));
+        }
+        std::cout << t_oss.str();
+        return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
         return 1;
