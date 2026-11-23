@@ -41,7 +41,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | `Layout` (Split grid engine) | `rich.layout` | `rich::layout::Layout` | ✅ Done | ✅ Yes | split_row/split_column with fixed size + ratio distribution, exact byte match |
 | | `Align` (Left/Center/Right) | `rich.align` | `rich::align::Align`, `align(Justify)` | ✅ Done | ✅ Yes | Full-width padding parity (`left`, `center`, `right`), exact byte match |
 | | `Constrain` (Max width clamp) | `rich.constrain` | `rich::constrain::Constrain`, `constrain(N)` | ✅ Done | ✅ Yes | Clamps child options width, exact byte match |
-| | `Table` extras: footers, caption, `row_styles`, `expand`, `add_section` | `rich.table` | — | ❌ Not Started | ❌ No | Per-column footer row, table caption, per-row styling, edge expansion |
+| | `Table` extras: footers, caption, `row_styles`, `expand`, `add_section` | `rich.table` | `rich::table::Table` | ✅ Done | ✅ Yes | `add_column(header, footer, ...)` + `show_footer(true)` (Python default `False` — footers only render with the flag, measured only then); `caption()` renders below the table, centered at table width (`table.caption` theme style); `expand(true)` distributes free console width via Python `_ratio.ratio_distribute` (sequential greedy ceil); `add_section()` draws the head-row glyph line after the marked row (never after the last data row); `row_styles(...)` applied cyclically to cell + padding (borders excluded) — styling itself not byte-visible in this oracle while Table appearance stays intentionally hardcoded (dim-gray border, bright-black header). Box pinned to `ROUNDED` on both sides: Python 15.0.0's default box is `HEAVY_HEAD`; oracle `table_extras` |
 | | `Panel` extras: `subtitle` (bottom border), `style`, `expand`, `fit` | `rich.panel` | — | ❌ Not Started | ❌ No | Subtitle text on the bottom border; content style; width expansion |
 | | `Rule` extras: `characters` (custom glyphs), `style`, `align` | `rich.rule` | — | ❌ Not Started | ❌ No | Custom rule line glyphs, rule styling, title alignment |
 | | `Tree` extras: `guide_style`, `expand`/`hide` toggles | `rich.tree` | — | ❌ Not Started | ❌ No | Styled branch guides; per-branch show/hide state |
@@ -87,7 +87,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 - 🚫 — oracle impossible: nondeterministic output (Traceback addresses/symbols), live-environment state (terminal size), interactive I/O (`Console.input()`), or not portable to C++. (Wall-clock timestamps are oracle-able via clock injection — see `Console.log()`.)
 
 ### Coverage summary
-- **49 oracle cases** (49/49 byte-exact) cover every deterministic ✅ row.
-- **12 rows ❌ Not Started** — portable but not implemented (largest: Progress custom columns, spinner registry, Syntax lexer/theme breadth, Table/Panel decoration).
+- **50 oracle cases** (50/50 byte-exact) cover every deterministic ✅ row.
+- **11 rows ❌ Not Started** — portable but not implemented (largest: Progress custom columns, spinner registry, Syntax lexer/theme breadth, Panel decoration).
 - **5 rows 🚫** (Status) — `scope()`, self-diagnostics/inspection, Jupyter/IPython, `logging` handler, `Pretty` struct introspection.
 - **8 rows 🚫** (Oracle column) — Traceback, terminal-size detection, `Console.input()`, + the 5 not-portable rows: byte-exact verification not possible.

@@ -866,6 +866,73 @@ int main(int argc, char* argv[]) {
         }
         std::cout << te_out.str();
         return 0;
+    } else if (test_name == "table_extras") {
+        // show_footer / caption / row_styles (geometry) / expand /
+        // add_section. Box pinned to ROUNDED on both sides (Python 15.0.0
+        // default is HEAVY_HEAD; the C++ default stays ROUNDED by design).
+        auto show_table = [&](rich::table::Table t) {
+            std::ostringstream oss;
+            rich::ConsoleOptions o{.width = 60, .record = true,
+                                   .legacy_windows = false};
+            rich::Console c(oss, o);
+            c.print(rich::AnyRenderable(std::move(t)));
+            std::cout << c.export_text();
+        };
+        {
+            rich::table::Table t;
+            t.add_column("Name", "nm");
+            t.add_column("Age", "ag", rich::table::Justify::Right);
+            t.add_row({"Alice", "30"});
+            t.add_row({"Bob", "25"});
+            t.show_footer(true);
+            show_table(std::move(t));
+        }
+        {
+            rich::table::Table t;
+            t.add_column("A");
+            t.add_column("B");
+            t.add_row({"1", "2"});
+            t.add_row({"3", "4"});
+            t.caption("My Caption");
+            show_table(std::move(t));
+        }
+        {
+            rich::table::Table t;
+            t.row_styles({rich::parse_style_def("dim"),
+                          rich::parse_style_def("bold")});
+            t.add_column("A");
+            t.add_column("B");
+            t.add_row({"1", "2"});
+            t.add_row({"3", "4"});
+            t.add_row({"5", "6"});
+            show_table(std::move(t));
+        }
+        {
+            rich::table::Table t(rich::table::TableOptions{.expand = true});
+            t.add_column("A");
+            t.add_column("B");
+            t.add_row({"1", "2"});
+            show_table(std::move(t));
+        }
+        {
+            rich::table::Table t;
+            t.add_column("A");
+            t.add_column("B");
+            t.add_row({"1", "2"});
+            t.add_section();
+            t.add_row({"3", "4"});
+            show_table(std::move(t));
+        }
+        {
+            rich::table::Table t(
+                rich::table::TableOptions{.expand = true, .box = rich::box::SQUARE});
+            t.add_column("A");
+            t.add_column("B");
+            t.add_column("C");
+            t.add_row({"x", "y", "z"});
+            show_table(std::move(t));
+        }
+        return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
         return 1;
