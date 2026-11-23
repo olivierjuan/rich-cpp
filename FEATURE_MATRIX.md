@@ -60,7 +60,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | Spinner registry (73 named animations + custom `Spinner`) | `rich.spinner`, `rich._spinners` | `rich::status::Spinner` | ✅ Done | ✅ Yes | All 73 `SPINNERS` entries verbatim (`SpinnerTable.h`, auto-generated from rich 15.0.0, roundtrip-verified); `Spinner(name, text, style, speed)` with Python frame math (start_time fix, `int(frame_no) % len`, deferred `update(speed)` continuity), custom frames/interval via `set_frames`, unknown name throws (Python: KeyError); `Status` migrated onto the registry. Oracle `spinner_registry` (12 sub-cases) |
 | | `Live` extras: `screen` mode, `vertical`, `refresh_per_second` | `rich.live` | `rich::live::Live` (screen, vertical_overflow, refresh_per_second) | ✅ Done | ✅ Yes | Alternate screen (`\x1b[?1049h/l`, screen forces transient), vertical overflow crop/ellipsis/visible (LiveRender parity, "visible" forced on stop), configurable refresh rate; non-TTY final frame with no trailing newline; oracle `live_extras` |
 | | `Pretty` struct introspection | `rich.pretty` | — | 🚫 Not portable | 🚫 | No `__rich_repr__`-style runtime field introspection in C++; containers/scalars are covered (see Pretty row) |
-| | `Pretty` `ReprHighlighter` coloring | `rich.pretty`, `rich.highlighter` | — | ❌ Not Started | ❌ No | Syntax-colored repr output |
+| | `Pretty` `ReprHighlighter` coloring | `rich.pretty`, `rich.highlighter` | `rich::pretty` (ReprHighlighter spans + `repr.*` styles) | ✅ Done | ✅ Yes | Repr token spans (braces/numbers/strings/bools/None/ellipsis) colored with Python's `default_styles` `repr.*` entries (bold/italic/cyan/green/magenta/bright, dim+green indent guides); oracle `pretty_sgr` (raw SGR, byte-exact) |
 | | `Syntax` extended coverage: ~70 Pygments lexers, ~20 themes, `line_numbers`, `start_line`, `word_wrap`, `tab_size`, `elide_lines` | `rich.syntax` | — | ❌ Not Started | ❌ No | C++ has 4 regex lexers (python/cpp/json/text) and the monokai theme |
 | | `Markdown` extras: task-list checkboxes, footnotes, reference-style links, table column alignment, setext (`==`) headings | `rich.markdown` | — | ❌ Not Started | ❌ No | Fenced code blocks *do* get `Syntax` highlighting (language detected from the fence info string) |
 | | `filesize()` / `Number` renderables | `rich.filesize`, `rich.numbers` | — | ❌ Not Started | ❌ No | Unit-formatted sizes (decimal/binary); numbers with digit grouping + alignment |
@@ -87,7 +87,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 - 🚫 — oracle impossible: nondeterministic output (Traceback addresses/symbols), live-environment state (terminal size), interactive I/O (`Console.input()`), or not portable to C++. (Wall-clock timestamps are oracle-able via clock injection — see `Console.log()`.)
 
 ### Coverage summary
-- **57 oracle cases** (57/57 byte-exact) cover every deterministic ✅ row.
-- **4 rows ❌ Not Started** — portable but not implemented (largest: Syntax lexer/theme breadth).
+- **58 oracle cases** (58/58 byte-exact) cover every deterministic ✅ row.
+- **3 rows ❌ Not Started** — portable but not implemented (largest: Syntax lexer/theme breadth).
 - **5 rows 🚫** (Status) — `scope()`, self-diagnostics/inspection, Jupyter/IPython, `logging` handler, `Pretty` struct introspection.
 - **8 rows 🚫** (Oracle column) — Traceback, terminal-size detection, `Console.input()`, + the 5 not-portable rows: byte-exact verification not possible.

@@ -1383,6 +1383,44 @@ int main(int argc, char* argv[]) {
         std::cout << out.str();
         std::cout << '\n';
         return 0;
+    } else if (test_name == "pretty_sgr") {
+        // Raw SGR: Pretty's ReprHighlighter coloring (repr.brace/number/str/
+        // bool/none/ellipsis + repr.indent guides) — mirrors oracle_gen.
+        rich::ConsoleOptions p_opts{.width = 60, .force_terminal = true,
+                                    .color_system = rich::ColorSystem::Truecolor,
+                                    .no_color = false, .legacy_windows = false};
+        std::ostringstream p_oss;
+        rich::Console pc(p_oss, p_opts);
+        pc.print(rich::pretty::pretty(std::make_tuple(1, std::string("two"), true,
+                                                           std::nullptr_t{})));
+        pc.print(rich::pretty::pretty(std::map<std::string, int>{{"a", 1}, {"b", 2}}));
+        std::vector<int> pv;
+        for (int i = 12; i < 27; ++i) pv.push_back(i);
+        pc.print(rich::pretty::pretty(pv));
+        {
+            rich::pretty::PrettyOptions po;
+            po.max_length = 3;
+            pc.print(rich::pretty::pretty(std::vector<int>{1, 2, 3, 4, 5, 6}, po));
+        }
+        {
+            rich::pretty::PrettyOptions po;
+            po.indent_guides = true;
+            pc.print(rich::pretty::pretty(std::vector<std::tuple<std::string, int>>{
+                                                     {std::string(8, 'a'), 1},
+                                                     {std::string(8, 'b'), 2}},
+                                          po));
+        }
+        pc.print(rich::pretty::pretty(
+            std::make_tuple(0.25, -2.5e3, std::string("end"))));
+        {
+            rich::pretty::PrettyOptions po;
+            po.expand_all = true;
+            pc.print(rich::pretty::pretty(std::map<std::string, std::map<std::string, std::vector<std::optional<double>>>>{
+                {"k", {{"deep", {0.25, std::nullopt}}}}},
+                                         po));
+        }
+        std::cout << p_oss.str();
+        return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
         return 1;

@@ -952,6 +952,25 @@ def generate_python_oracle(test_name: str) -> str:
             pass
         c.line()
         return c.export_text()
+    elif test_name == "pretty_sgr":
+        # Raw SGR stream: Pretty's ReprHighlighter coloring — repr.brace bold,
+        # repr.number bold+cyan, repr.str green, repr.bool_true/false
+        # italic+bright, repr.none italic+magenta, "..." ellipsis yellow,
+        # repr.indent green dim guides.
+        from rich.pretty import Pretty
+
+        sink2 = io.StringIO()
+        c2 = Console(file=sink2, width=60, height=25, force_terminal=True,
+                     color_system="truecolor", no_color=False,
+                     legacy_windows=False)
+        c2.print((1, "two", True, None))
+        c2.print({"a": 1, "b": 2})
+        c2.print(list(range(12, 27)))
+        c2.print(Pretty([1, 2, 3, 4, 5, 6], max_length=3))
+        c2.print(Pretty([("a" * 8, 1), ("b" * 8, 2)], indent_guides=True))
+        c2.print((0.25, -2.5e3, "end"))
+        c2.print(Pretty({"k": {"deep": [0.25, None]}}, expand_all=True))
+        return sink2.getvalue()
     return c.export_text()
 
 def main():

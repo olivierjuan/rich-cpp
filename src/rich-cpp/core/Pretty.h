@@ -582,45 +582,49 @@ inline std::vector<ReprSpan> scan_repr(std::string_view t) {
     return spans;
 }
 
-// repr.* default styles (default_styles.py).
+// repr.* default styles (default_styles.py). Explicit bits mark the
+// attributes Python's Style(bold=True, ...) constructor records, which
+// style_sgr emits even when the underlying bool is false.
 inline const Style& repr_style(ReprKind k) {
     switch (k) {
         case ReprKind::Brace: {
-            static const Style s{.bold = true};
+            // Style(bold=True)
+            static const Style s{.bold = true, .explicit_bits = 0x0001};
             return s;
         }
         case ReprKind::True: {
-            static const Style s{.italic = true, .color = Color::from_ansi(92)}; // bright_green
+            // Style(color="bright_green", italic=True)
+            static const Style s{.italic = true, .color = Color::from_ansi(92),
+                                 .explicit_bits = 0x0004};
             return s;
         }
         case ReprKind::False_: {
-            static const Style s{.italic = true, .color = Color::from_ansi(91)}; // bright_red
+            // Style(color="bright_red", italic=True)
+            static const Style s{.italic = true, .color = Color::from_ansi(91),
+                                 .explicit_bits = 0x0004};
             return s;
         }
         case ReprKind::None_: {
-            static const Style s{.italic = true, .color = Color::from_ansi(35)}; // magenta
+            // Style(color="magenta", italic=True)
+            static const Style s{.italic = true, .color = Color::from_ansi(35),
+                                 .explicit_bits = 0x0004};
             return s;
         }
         case ReprKind::Ellipsis: {
-            static const Style s{.color = Color::from_ansi(33)}; // yellow
+            // Style(color="yellow")
+            static const Style s{.color = Color::from_ansi(33)};
             return s;
         }
         case ReprKind::Number: {
-            static const Style s{.bold = true, .color = Color::from_ansi(36)}; // cyan
-            static bool init = false;
-            if (!init) {
-                const_cast<Style&>(s).explicit_bits |= 0x04; // italic=False
-                init = true;
-            }
+            // Style(color="cyan", bold=True, italic=False)
+            static const Style s{.bold = true, .color = Color::from_ansi(36),
+                                 .explicit_bits = 0x0001 | 0x0004};
             return s;
         }
         case ReprKind::Str: {
-            static const Style s{.color = Color::from_ansi(32)}; // green
-            static bool init = false;
-            if (!init) {
-                const_cast<Style&>(s).explicit_bits |= 0x01 | 0x04; // bold/italic=False
-                init = true;
-            }
+            // Style(color="green", italic=False, bold=False)
+            static const Style s{.color = Color::from_ansi(32),
+                                 .explicit_bits = 0x0001 | 0x0004};
             return s;
         }
     }
@@ -689,7 +693,8 @@ inline void apply_indent_guides(std::vector<Segment>& segs, size_t indent_size) 
     std::string unit;
     unit += "\xE2\x94\x82"; // │
     unit.append(indent_size - 1, ' ');
-    const Style guide{.dim = true, .color = Color::from_ansi(32)}; // green
+    const Style guide{.dim = true, .color = Color::from_ansi(32),
+                      .explicit_bits = 0x0002}; // repr.indent: green, dim=True
     for (size_t i = 0; i < segs.size(); ++i) {
         Segment& s = segs[i];
         const size_t nl = s.text.rfind('\n');
