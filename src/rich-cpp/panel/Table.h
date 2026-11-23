@@ -166,14 +166,18 @@ public:
         auto header_style = con.get_style("table.header", "");
         auto footer_style = con.get_style("table.footer", "");
 
-        // Python get_row widths span the whole column incl. padding; the
-        // head/row/foot glyph sets are identical in every standard box, so
-        // head_row_* serves all three.
-        auto row_line = [&](bool with_newline) {
-            std::string sep = std::string(bx.head_row_left);
+        // Python get_row(widths, level): "head" -> head_row_*, "row" ->
+        // row_*, "foot" -> foot_row_*; widths span the whole column incl.
+        // padding. The three glyph sets coincide in the classic boxes but
+        // differ in MINIMAL*/SIMPLE*/HEAVY_HEAD/DOUBLE_EDGE/HEAVY_EDGE/
+        // MARKDOWN/ASCII_DOUBLE_HEAD/SQUARE_DOUBLE_HEAD, so the caller
+        // picks the set.
+        auto row_line = [&](bool with_newline, std::string_view left, std::string_view horizontal,
+                            std::string_view cross, std::string_view right) {
+            std::string sep(left);
             for (size_t i = 0; i < cols_.size(); ++i) {
-                sep += repeat_box(bx.head_row_horizontal, col_widths[i]);
-                sep += (i + 1 < cols_.size()) ? bx.head_row_cross : (std::string(bx.head_row_right) + (with_newline ? "\n" : ""));
+                sep += repeat_box(horizontal, col_widths[i]);
+                sep += (i + 1 < cols_.size()) ? cross : (std::string(right) + (with_newline ? "\n" : ""));
             }
             out.push_back({std::move(sep), border_style});
         };
@@ -186,10 +190,11 @@ public:
         }
         out.push_back({std::move(top), border_style});
 
-        // Header row (table.header style, no row style)
+        // Header row (table.header style, no row style; Python box
+        // segments: first row uses head_left/head_vertical/head_right)
         {
             for (size_t i = 0; i < cols_.size(); ++i) {
-                out.push_back({std::string(i == 0 ? bx.mid_left : bx.mid_vertical), border_style});
+                out.push_back({std::string(i == 0 ? bx.head_left : bx.head_vertical), border_style});
                 auto segs = rich::parse_markup(cols_[i].header);
                 size_t text_len = 0;
                 for (const auto& s : segs) text_len += cell_width_table(s.text);
@@ -211,11 +216,11 @@ public:
                     out.push_back({std::string(pad_diff, ' ') + " ", header_style});
                 }
             }
-            out.push_back({std::string(bx.mid_right) + "\n", border_style});
+            out.push_back({std::string(bx.head_right) + "\n", border_style});
         }
 
-        // Header separator
-        row_line(true);
+        // Header separator (Python get_row(widths, "head"))
+        row_line(true, bx.head_row_left, bx.head_row_horizontal, bx.head_row_cross, bx.head_row_right);
 
         // Rows (row_styles applied cyclically: Python index % len)
         for (size_t ri = 0; ri < rows_.size(); ++ri) {
@@ -252,16 +257,18 @@ public:
             out.push_back({std::string(bx.mid_right) + "\n", border_style});
             // Section line after this row (Python end_section; never after
             // the last data row — a foot line or the bottom border follows).
+            // Python draws get_row(widths, "row") here.
             if (ri + 1 < rows_.size() && (ri < sections_.size()) && sections_[ri])
-                row_line(true);
+                row_line(true, bx.row_left, bx.row_horizontal, bx.row_cross, bx.row_right);
         }
 
-        // Footer (Python: foot line + footer row, table.footer style —
-        // bold by default, separately overridable in a theme)
+        // Footer (Python: foot line get_row(widths, "foot") + footer row
+        // with foot_left/foot_vertical/foot_right edges, table.footer
+        // style — bold by default, separately overridable in a theme)
         if (show_footer) {
-            row_line(true);
+            row_line(true, bx.foot_row_left, bx.foot_row_horizontal, bx.foot_row_cross, bx.foot_row_right);
             for (size_t i = 0; i < cols_.size(); ++i) {
-                out.push_back({std::string(i == 0 ? bx.mid_left : bx.mid_vertical), border_style});
+                out.push_back({std::string(i == 0 ? bx.foot_left : bx.foot_vertical), border_style});
                 auto segs = rich::parse_markup(cols_[i].footer);
                 size_t text_len = 0;
                 for (const auto& s : segs) text_len += cell_width_table(s.text);
@@ -283,7 +290,7 @@ public:
                     out.push_back({std::string(pad_diff, ' ') + " ", footer_style});
                 }
             }
-            out.push_back({std::string(bx.mid_right) + "\n", border_style});
+            out.push_back({std::string(bx.foot_right) + "\n", border_style});
         }
 
         // Bottom border

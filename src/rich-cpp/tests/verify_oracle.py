@@ -54,6 +54,7 @@ TEST_CASES = [
     "highlighter_basic",
     "text_extras_basic",
     "table_extras",
+    "box_variants",
     "panel_extras",
     "rule_extras",
     "tree_extras",

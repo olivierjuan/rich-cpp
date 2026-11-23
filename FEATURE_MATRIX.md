@@ -36,7 +36,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | `Columns` | `rich.columns` | `rich::decorator::Columns` | ✅ Done | ✅ Yes | Multi-row wrapping, varied card widths, left-alignment |
 | | `Table` | `rich.table` | `rich::table::Table` | ✅ Done | ✅ Yes | Multi-column, custom box styles, left/right/center justification |
 | | `Rule` | `rich.rule` | `rich::Rule`, `Console::rule` | ✅ Done | ✅ Yes | Centered title, dashed box lines, exact byte match |
-| | `Box` styles library | `rich.box` | `rich::box::Box` | ✅ Done | ✅ Yes | 5 of rich 15.0.0's 19 box variants — `ROUNDED`, `SQUARE`, `HEAVY`, `DOUBLE`, `ASCII` (the set the oracles use); the other 14 (incl. `HEAVY_HEAD`, Python's `Table` default) not ported — the C++ `Table` default stays `ROUNDED` by design (see Table extras row) |
+| | `Box` styles library | `rich.box` | `rich::box::Box` | ✅ Done | ✅ Yes | All 19 box variants of rich 15.0.0 verbatim, full field set (top / head / head_row / mid / row / foot_row / foot / bottom — 29 glyphs per box); `Table` render selects per-line glyph sets exactly like Python (`get_row` levels head/row/foot + head/mid/foot edges). Not ported: `Box.substitute` (`LEGACY_WINDOWS_SUBSTITUTIONS` / `ascii_only`) and `get_plain_headed_box` (no `show_header=False` in the C++ API) — oracles `box_double`, `box_heavy`, `box_ascii`, `box_variants` (all 19 × full table) |
 | | `Tree` (hierarchical tree view) | `rich.tree` | `rich::tree::Tree` | ✅ Done | ✅ Yes | Recursive branch guides (`├── `, `└── `, `│   `), exact byte match |
 | | `Layout` (Split grid engine) | `rich.layout` | `rich::layout::Layout` | ✅ Done | ✅ Yes | split_row/split_column with fixed size + ratio distribution, exact byte match |
 | | `Align` (Left/Center/Right) | `rich.align` | `rich::align::Align`, `align(Justify)` | ✅ Done | ✅ Yes | Full-width padding parity (`left`, `center`, `right`), exact byte match |
@@ -70,7 +70,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 | | Record / Export (Text) | `rich.console` | `Console::export_text` | ✅ Done | ✅ Yes | Records terminal output to buffer |
 | | Export to SVG | `rich.console` | `Console::export_svg` | ✅ Done | ✅ Yes | SVG terminal snapshot (`CONSOLE_SVG_FORMAT` port, `unique_id` from segment-repr adler32) |
 | | Export to HTML | `rich.console` | `Console::export_html` | ✅ Done | ✅ Yes | HTML terminal snapshot (`DEFAULT_TERMINAL_THEME`, class-based CSS); oracle `export_html` |
-| | Automated Oracle test suite | Tests | `src/rich-cpp/tests/verify_oracle.py` | ✅ Done | ✅ Yes | 61/61 exact byte-level parity checks with Python Rich |
+| | Automated Oracle test suite | Tests | `src/rich-cpp/tests/verify_oracle.py` | ✅ Done | ✅ Yes | 62/62 exact byte-level parity checks with Python Rich |
 
 ---
 
@@ -87,7 +87,7 @@ This document tracks the feature coverage of **Rich C++** relative to **Rich Pyt
 - 🚫 — oracle impossible: nondeterministic output (Traceback addresses/symbols), live-environment state (terminal size), interactive I/O (`Console.input()`), or not portable to C++. (Wall-clock timestamps are oracle-able via clock injection — see `Console.log()`.)
 
 ### Coverage summary
-- **61 oracle cases** (61/61 byte-exact) cover every deterministic ✅ row.
+- **62 oracle cases** (62/62 byte-exact) cover every deterministic ✅ row.
 - **0 rows ❌ Not Started** — every portable deterministic row is implemented and oracle-verified.
 - **5 rows 🚫** (Status) — `scope()`, self-diagnostics/inspection, Jupyter/IPython, `logging` handler, `Pretty` struct introspection.
 - **8 rows 🚫** (Oracle column) — Traceback, terminal-size detection, `Console.input()`, + the 5 not-portable rows: byte-exact verification not possible.

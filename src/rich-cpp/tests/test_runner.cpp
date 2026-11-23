@@ -996,6 +996,34 @@ int main(int argc, char* argv[]) {
             show_table(std::move(t));
         }
         return 0;
+    } else if (test_name == "box_variants") {
+        // All 19 box variants of rich 15.0.0 (glyphs 1:1 in box.h): each
+        // table renders head_* edges, head_row separator, mid rows, row
+        // separator (section), foot_row separator, foot_* footer row.
+        static const rich::box::Box boxes[] = {
+            rich::box::ASCII, rich::box::ASCII2, rich::box::ASCII_DOUBLE_HEAD,
+            rich::box::SQUARE, rich::box::SQUARE_DOUBLE_HEAD, rich::box::MINIMAL,
+            rich::box::MINIMAL_HEAVY_HEAD, rich::box::MINIMAL_DOUBLE_HEAD,
+            rich::box::SIMPLE, rich::box::SIMPLE_HEAD, rich::box::SIMPLE_HEAVY,
+            rich::box::HORIZONTALS, rich::box::ROUNDED, rich::box::HEAVY,
+            rich::box::HEAVY_EDGE, rich::box::HEAVY_HEAD, rich::box::DOUBLE,
+            rich::box::DOUBLE_EDGE, rich::box::MARKDOWN};
+        for (auto b : boxes) {
+            std::ostringstream oss;
+            rich::ConsoleOptions o{.width = 60, .record = true,
+                                   .legacy_windows = false};
+            rich::Console c(oss, o);
+            rich::table::Table t(
+                rich::table::TableOptions{.box = b, .show_footer = true});
+            t.add_column("Name", "nm");
+            t.add_column("Age", "ag", rich::table::Justify::Right);
+            t.add_row({"Alice", "30"});
+            t.add_section();
+            t.add_row({"Bob", "25"});
+            c.print(rich::AnyRenderable(t));
+            std::cout << c.export_text();
+        }
+        return 0;
     } else if (test_name == "panel_extras") {
         // subtitle / style / border_style / expand / fit / height — raw SGR
         // (styles are byte-visible; geometry covers expand/fit/height).

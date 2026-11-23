@@ -707,6 +707,26 @@ def generate_python_oracle(test_name: str) -> str:
         t.add_row("x", "y", "z")
         c.print(t)
         return c.export_text()
+    elif test_name == "box_variants":
+        # All 19 box variants of rich 15.0.0, one table each: header row
+        # (head_* edges), head_row separator, mid data rows, row separator
+        # (section), foot_row separator + foot_* footer row, bottom. The
+        # MINIMAL*/SIMPLE*/HEAVY_HEAD/EDGE/DOMAIN variants differ across
+        # those glyph rows, so this pins every field of every box.
+        for n in ["ASCII", "ASCII2", "ASCII_DOUBLE_HEAD", "SQUARE",
+                  "SQUARE_DOUBLE_HEAD", "MINIMAL", "MINIMAL_HEAVY_HEAD",
+                  "MINIMAL_DOUBLE_HEAD", "SIMPLE", "SIMPLE_HEAD",
+                  "SIMPLE_HEAVY", "HORIZONTALS", "ROUNDED", "HEAVY",
+                  "HEAVY_EDGE", "HEAVY_HEAD", "DOUBLE", "DOUBLE_EDGE",
+                  "MARKDOWN"]:
+            t = Table(box=getattr(box, n), show_footer=True)
+            t.add_column("Name", footer="nm")
+            t.add_column("Age", footer="ag", justify="right")
+            t.add_row("Alice", "30")
+            t.add_section()
+            t.add_row("Bob", "25")
+            c.print(t)
+        return c.export_text()
     elif test_name == "panel_extras":
         # subtitle / style / border_style / expand / fit / height — raw SGR
         # (styles are byte-visible; geometry covers expand/fit/height).
