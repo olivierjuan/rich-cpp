@@ -135,10 +135,17 @@ namespace detail {
 RICH_EXPORT const Style& kNoneStyle();
 } // namespace detail
 
+// Python rich.text.OverflowMethod / ConsoleOptions.overflow (None → "fold").
+enum class Overflow { Fold, Crop, Ellipsis };
+
 struct Options {
     bool show_border{true};
     size_t width{80};
     size_t height{0}; // 0 = not applicable / auto
+    // Overflow applied by text renderers that do not set their own
+    // (Python: overflow = self.overflow or options.overflow or "fold").
+    Overflow overflow{Overflow::Fold};
+    bool no_wrap{false};
 };
 
 class Console;
@@ -610,7 +617,8 @@ inline std::vector<Segment> render_item(const Text& t, const Console&, const Opt
     // lines with style-None newlines, append the end ("\n").
     size_t width = (opt.width > 0) ? opt.width : 80;
     std::vector<Segment> single{{t.content, t.style}};
-    auto out = text::wrap_detail::wrap_styled(single, width, true, detail::kNoneStyle());
+    auto out = text::wrap_detail::wrap_styled(single, width, opt.overflow,
+                                              detail::kNoneStyle(), opt.no_wrap);
     out.push_back({"\n", detail::kNoneStyle()});
     return out;
 }
@@ -658,12 +666,14 @@ inline std::vector<Segment> render_item(const StyledText& t, const Console&, con
     if (t.content.find('[') == std::string::npos) {
         std::string text = emoji_replace(t.content);
         auto out = text::wrap_detail::wrap_styled({{text, detail::kNoneStyle()}}, width,
-                                                  true, detail::kNoneStyle());
+                                                  opt.overflow, detail::kNoneStyle(),
+                                                  opt.no_wrap);
         out.push_back({"\n", detail::kNoneStyle()});
         return out;
     }
     auto segs = parse_markup(t.content);
-    auto out = text::wrap_detail::wrap_styled(segs, width, true, detail::kNoneStyle());
+    auto out = text::wrap_detail::wrap_styled(segs, width, opt.overflow,
+                                              detail::kNoneStyle(), opt.no_wrap);
     out.push_back({"\n", detail::kNoneStyle()});
     return out;
 }

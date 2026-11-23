@@ -256,27 +256,30 @@ public:
     }
 
     std::pair<size_t, size_t> measure(const rich::Console& con, const rich::Options& opt) const {
+        // Python __rich_measure__: Measurement(width, width) — the pair
+        // convention is {min, max} widths, NOT {width, height}.
         const size_t max_w = (opt.width > 0) ? opt.width : 80;
-        if (options_.width > 0) {
-            return {options_.width, 3};
-        }
-
-        auto title_segs = rich::parse_markup(options_.title);
-        size_t title_vis_w = 0;
-        for (const auto& s : title_segs) title_vis_w += cell_width(s.text);
-
-        auto inner_segs = inner_.render(con, opt);
-        auto ext = text_segs_extent(inner_segs);
-
         size_t w;
-        if (options_.expand) {
-            w = max_w;
+        if (options_.width > 0) {
+            w = options_.width;
         } else {
-            w = ext.first + 4;
+            auto title_segs = rich::parse_markup(options_.title);
+            size_t title_vis_w = 0;
+            for (const auto& s : title_segs) title_vis_w += cell_width(s.text);
+
+            auto inner_segs = inner_.render(con, opt);
+            auto ext = text_segs_extent(inner_segs);
+
+            if (options_.expand) {
+                // width = min(measured, max_width - 4) + 4
+                w = (max_w >= 4) ? (std::min(ext.first, max_w - 4) + 4) : max_w;
+            } else {
+                w = ext.first + 4;
+            }
+            if (!options_.title.empty())
+                w = std::min(max_w, std::max(w, title_vis_w + 4));
         }
-        if (!options_.title.empty())
-            w = std::min(max_w, std::max(w, title_vis_w + 4));
-        return {w, ext.second + 2};
+        return {w, w};
     }
 
 private:

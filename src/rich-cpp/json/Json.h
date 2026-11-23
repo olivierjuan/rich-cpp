@@ -645,7 +645,8 @@ struct Json {
                                 : std::vector<rich::Segment>{{std::string(content), rich::detail::kNoneStyle()}};
         // Text semantics: word wrap (fold) at console width, trailing
         // end="\n" as a style-None segment.
-        auto out = text::wrap_detail::wrap_styled(segs, width, true, rich::detail::kNoneStyle());
+        auto out = text::wrap_detail::wrap_styled(segs, width, text::Overflow::Fold,
+                                                  rich::detail::kNoneStyle());
         out.push_back({"\n", rich::detail::kNoneStyle()});
         return out;
     }

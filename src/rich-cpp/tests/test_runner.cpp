@@ -1044,6 +1044,82 @@ int main(int argc, char* argv[]) {
         }
         std::cout << t_oss.str();
         return 0;
+    } else if (test_name == "columns_extras") {
+        // expand / equal / column_first / right_to_left / width / title /
+        // padding — raw SGR (str items pass through console.render_str in
+        // Python, so the 18-digit items are auto-highlighted by the default
+        // ReprHighlighter; C++ applies the same ReprHighlighter directly).
+        std::ostringstream t_oss;
+        rich::ConsoleOptions t_opts{.width = 60, .height = 25, .record = false,
+                                    .legacy_windows = false,
+                                    .force_terminal = true,
+                                    .color_system = rich::ColorSystem::Truecolor,
+                                    .no_color = false};
+        rich::Console tc(t_oss, t_opts);
+        using CO = rich::decorator::Columns::Options;
+        auto items3 = []() {
+            std::vector<rich::AnyRenderable> v;
+            for (auto s : {"aaaa", "bb", "cccccccc"})
+                v.push_back(rich::AnyRenderable(rich::Text{std::string(s), {}}));
+            return v;
+        };
+        auto items6 = []() {
+            std::vector<rich::AnyRenderable> v;
+            for (auto s : {"i1", "i2", "i3", "i4", "i5", "i6"})
+                v.push_back(rich::AnyRenderable(rich::Text{std::string(s), {}}));
+            return v;
+        };
+        auto items5x18 = []() {
+            std::vector<rich::AnyRenderable> v;
+            for (int n = 1; n <= 5; ++n)
+                v.push_back(rich::AnyRenderable(
+                    rich::ReprHighlighter()(std::string(18, '0' + n))));
+            return v;
+        };
+        tc.print(rich::AnyRenderable(rich::decorator::Columns(items3())));
+        tc.print(rich::AnyRenderable(rich::decorator::Columns(items3(), CO{.expand = true})));
+        tc.print(rich::AnyRenderable(rich::decorator::Columns(items3(), CO{.equal = true})));
+        tc.print(
+            rich::AnyRenderable(rich::decorator::Columns(items6(), CO{.column_first = true})));
+        tc.print(rich::AnyRenderable(
+            rich::decorator::Columns(items6(), CO{.expand = true, .column_first = true})));
+        tc.print(rich::AnyRenderable(rich::decorator::Columns(items5x18())));
+        tc.print(rich::AnyRenderable(rich::decorator::Columns(
+            items3(), CO{.align = rich::decorator::Columns::Align::Right})));
+        {
+            auto itemsMix = []() {
+                std::vector<rich::AnyRenderable> v;
+                for (auto ch : {'a', 'b', 'c', 'd', 'e', 'f'})
+                    v.push_back(rich::AnyRenderable(rich::Text{std::string(12, ch), {}}));
+                for (auto s : {"gg", "hh"})
+                    v.push_back(rich::AnyRenderable(rich::Text{std::string(s), {}}));
+                return v;
+            };
+            tc.print(rich::AnyRenderable(rich::decorator::Columns(
+                itemsMix(), CO{.align = rich::decorator::Columns::Align::Right})));
+            tc.print(rich::AnyRenderable(rich::decorator::Columns(
+                itemsMix(), CO{.align = rich::decorator::Columns::Align::Center})));
+        }
+        tc.print(rich::AnyRenderable(rich::decorator::Columns(items3(), CO{.title = "Titled"})));
+        tc.print(rich::AnyRenderable(rich::decorator::Columns(items3(), CO{.width = 6})));
+        tc.print(rich::AnyRenderable(rich::decorator::Columns(items3(), CO{.right_to_left = true})));
+        tc.print(rich::AnyRenderable(rich::decorator::Columns(
+            items3(), CO{.pad_top = 1, .pad_right = 2, .pad_bottom = 1, .pad_left = 2})));
+        tc.print(rich::AnyRenderable(rich::decorator::Columns(
+            items3(),
+            CO{.pad_top = 1, .pad_right = 2, .pad_bottom = 1, .pad_left = 2, .expand = true})));
+        {
+            std::vector<rich::AnyRenderable> styled;
+            styled.push_back(rich::AnyRenderable(
+                rich::Text{std::string("aaaa"), tc.get_style("red")}));
+            styled.push_back(rich::AnyRenderable(
+                rich::Text{std::string("bb"), tc.get_style("bold green")}));
+            styled.push_back(rich::AnyRenderable(
+                rich::Text{std::string("cccccccc"), tc.get_style("cyan")}));
+            tc.print(rich::AnyRenderable(rich::decorator::Columns(std::move(styled))));
+        }
+        std::cout << t_oss.str();
+        return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
         return 1;

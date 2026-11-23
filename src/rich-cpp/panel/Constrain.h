@@ -21,7 +21,8 @@ public:
         (void)opt;
         rich::Options child{.width = width_};
         auto [w, h] = inner_.measure(con, child);
-        return {std::min(w, width_), h};
+        // Python: child measurement .with_maximum(width) caps both ends.
+        return {std::min(w, width_), std::min(h, width_)};
     }
 
 private:

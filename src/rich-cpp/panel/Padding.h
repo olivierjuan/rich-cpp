@@ -37,10 +37,15 @@ public:
     // Python __rich_measure__: (min,max) + left+right, capped at max_width;
     // height unchanged.
     std::pair<size_t, size_t> measure(const rich::Console& con, const rich::Options& opt) const {
-        auto [w, h] = inner_.measure(con, opt);
-        size_t w2 = w + 2 * padding_;
-        if (opt.width > 0) w2 = std::min(w2, opt.width);
-        return {w2, h};
+        // Pair is {min, max} widths; inner max is carried in the second slot.
+        auto [mn, mx] = inner_.measure(con, opt);
+        mn += 2 * padding_;
+        mx += 2 * padding_;
+        if (opt.width > 0) {
+            mn = std::min(mn, opt.width);  // Python: .with_maximum(max_width)
+            mx = std::min(mx, opt.width);
+        }
+        return {mn, mx};
     }
 
 private:

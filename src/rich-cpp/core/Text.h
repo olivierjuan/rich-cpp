@@ -37,7 +37,7 @@ namespace rich::text {
 using unicode::chop_cells;
 using unicode::string_cell_len;
 
-enum class Overflow { Fold, Crop, Ellipsis };
+using Overflow = ::rich::Overflow;
 // Default mirrors Python's DEFAULT_JUSTIFY = "default": no justification.
 enum class Justify { Default, Left, Center, Right, Full };
 
@@ -122,14 +122,32 @@ inline void rstrip_end(std::string& line, size_t size) {
     line.erase(i);
 }
 
+// Python line.truncate(width, overflow) cut position as a char offset:
+// cell-based, a wide character straddling the cut is dropped whole.
+inline size_t char_offset_at_cell(std::string_view text, size_t cells) {
+    size_t i = 0, used = 0;
+    while (i < text.size()) {
+        size_t j = i;
+        char32_t cp = unicode::decode_utf8(text, j);
+        size_t cw = static_cast<size_t>(unicode::get_character_cell_size(cp));
+        if (used + cw > cells) break;
+        used += cw;
+        i = j;
+    }
+    return i;
+}
+
 // Styled-segment wrapper (console.render parity): split segments into lines
 // at '\n' (trailing '\r' dropped, CRLF), expand tabs, divide each line at
 // cell-aware break offsets, then re-emit per-line pieces with their original
 // styles. Line separators are emitted as separate segments with `nl_style`
 // (Python records inter-line newlines as style=None → pass the sentinel).
+// `overflow`/`no_wrap` mirror Python Text.wrap's final per-line
+// `line.truncate(width, overflow)` (and no-wrap skips divide + rstrip).
 inline std::vector<Segment> wrap_styled(const std::vector<Segment>& segs,
-                                        size_t width, bool fold,
-                                        const Style& nl_style) {
+                                        size_t width, Overflow overflow,
+                                        const Style& nl_style, bool no_wrap = false) {
+    const bool fold = (overflow == Overflow::Fold);
     // 1. Group segments into lines at '\n'; keep every blank line (Python
     //    split(allow_blank=True), incl. the trailing one after a final '\n').
     using Run = std::pair<std::string, const Style*>; // (text, style)
@@ -187,7 +205,30 @@ inline std::vector<Segment> wrap_styled(const std::vector<Segment>& segs,
                 i = j;
             }
         }
-        auto breaks = divide_line(text, width, fold);
+        std::vector<size_t> breaks = no_wrap ? std::vector<size_t>{}
+                                             : divide_line(text, width, fold);
+        // Final per-line truncate (Python Text.wrap: line.truncate(width,
+        // overflow)) — applied after divide; fold always fits, so skip it.
+        // no_wrap also skips rstrip_end (Python keeps the line whole).
+        const size_t original_size = text.size();
+        size_t cut_char = original_size;
+        if (overflow != Overflow::Fold && string_cell_len(text) > width) {
+            cut_char = char_offset_at_cell(
+                text, overflow == Overflow::Ellipsis ? (width > 0 ? width - 1 : 0) : width);
+            breaks.erase(std::remove_if(breaks.begin(), breaks.end(),
+                                        [cut_char](size_t b) { return b >= cut_char; }),
+                         breaks.end());
+        }
+        const bool ellipsize =
+            overflow == Overflow::Ellipsis && cut_char < original_size;
+        const Style* ellipsis_style =
+            cut_char < original_size
+                ? char_style[cut_char < char_style.size() ? cut_char : char_style.size() - 1]
+                : nullptr;
+        if (cut_char < original_size) {
+            text.resize(cut_char);
+            char_style.resize(cut_char);
+        }
         // Emit this line's parts (split back across the original style runs),
         // separated from the previous line by a style-None newline.
         std::vector<size_t> bounds;
@@ -199,7 +240,7 @@ inline std::vector<Segment> wrap_styled(const std::vector<Segment>& segs,
             size_t start = bounds[p];
             size_t end = bounds[p + 1];
             std::string part = text.substr(start, end - start);
-            rstrip_end(part, width);
+            if (!no_wrap) rstrip_end(part, width);
             if (!out.empty()) out.push_back({"\n", nl_style});
             size_t k = start;
             const size_t part_end = start + part.size();
@@ -211,6 +252,8 @@ inline std::vector<Segment> wrap_styled(const std::vector<Segment>& segs,
                 k = k2;
             }
         }
+        if (ellipsize)
+            out.push_back({"\xe2\x80\xa6", *ellipsis_style});
     }
     return out;
 }

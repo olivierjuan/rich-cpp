@@ -724,6 +724,36 @@ def generate_python_oracle(test_name: str) -> str:
         t.add("kid")
         c.print(t)
         return sink.getvalue()
+    elif test_name == "columns_extras":
+        # expand / equal / column_first / right_to_left / width / title /
+        # padding — raw SGR (str items pass through console.render_str, so
+        # the 18-digit items are auto-highlighted by the default
+        # ReprHighlighter — byte-identical to the C++ ReprHighlighter).
+        sink = io.StringIO()
+        c = Console(file=sink, width=60, height=25, record=False,
+                    legacy_windows=False, force_terminal=True,
+                    color_system="truecolor", no_color=False)
+        c.print(Columns(["aaaa", "bb", "cccccccc"]))
+        c.print(Columns(["aaaa", "bb", "cccccccc"], expand=True))
+        c.print(Columns(["aaaa", "bb", "cccccccc"], equal=True))
+        c.print(Columns(["i1", "i2", "i3", "i4", "i5", "i6"], column_first=True))
+        c.print(Columns(["i1", "i2", "i3", "i4", "i5", "i6"], column_first=True,
+                        expand=True))
+        c.print(Columns([f"{n}" * 18 for n in range(1, 6)]))
+        c.print(Columns(["aaaa", "bb", "cccccccc"], align="right"))
+        c.print(Columns(["a" * 12, "b" * 12, "c" * 12, "d" * 12, "e" * 12,
+                         "f" * 12, "gg", "hh"], align="right"))
+        c.print(Columns(["a" * 12, "b" * 12, "c" * 12, "d" * 12, "e" * 12,
+                         "f" * 12, "gg", "hh"], align="center"))
+        c.print(Columns(["aaaa", "bb", "cccccccc"], title="Titled"))
+        c.print(Columns(["aaaa", "bb", "cccccccc"], width=6))
+        c.print(Columns(["aaaa", "bb", "cccccccc"], right_to_left=True))
+        c.print(Columns(["aaaa", "bb", "cccccccc"], padding=(1, 2)))
+        c.print(Columns(["aaaa", "bb", "cccccccc"], padding=(1, 2), expand=True))
+        c.print(Columns([Text("aaaa", style="red"),
+                         Text("bb", style="bold green"),
+                         Text("cccccccc", style="cyan")]))
+        return sink.getvalue()
     return c.export_text()
 
 def main():

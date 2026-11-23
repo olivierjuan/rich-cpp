@@ -747,7 +747,7 @@ inline std::vector<Segment> render_item(const PrettyValue<T>& p, const Console&,
     if (o.no_wrap) {
         out = std::move(segs);
     } else {
-        out = text::wrap_detail::wrap_styled(std::move(segs), width, true,
+        out = text::wrap_detail::wrap_styled(std::move(segs), width, text::Overflow::Fold,
                                              rich::detail::kNoneStyle());
     }
     out.push_back({"\n", rich::detail::kNoneStyle()});

@@ -82,9 +82,11 @@ public:
     }
 
     std::pair<size_t, size_t> measure(const rich::Console& con, const rich::Options& opt) const {
-        auto [w, h] = inner_.measure(con, opt);
-        size_t mw = (width_ == 0) ? w : std::min(w, width_);
-        return {mw, h};
+        // Python: width None → child measurement; explicit width → (width, width).
+        if (width_ == 0) {
+            return inner_.measure(con, opt);
+        }
+        return {width_, width_};
     }
 
 private:

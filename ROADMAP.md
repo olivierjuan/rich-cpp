@@ -156,7 +156,7 @@ graph TD
 - [x] **Repr tree + expansion engine (`src/rich-cpp/core/Pretty.h`)**: port of Python `rich.pretty` `Node`/`_Line` — containers stay on one line while their token stream fits the console width, else expand (open brace line, children indented +4 with `,` separators, close brace line). Nested containers re-check independently.
 - [x] **Portable types**: sequences (`vector`/`list`/`deque`/`array`), maps (`map`/`unordered_map`), `pair`/`tuple` (incl. 1-tuple trailing comma), `optional` (`None`), scalars with Python reprs (`True`/`False`/`None`, `str(float)`, quoted strings).
 - [x] Oracle tests: `pretty_list`, `pretty_dict` (inline + expanded + nested), `pretty_scalars`, `pretty_options`.
-- [ ] Not portable / pending: struct introspection, `ReprHighlighter` syntax coloring, `max_length`/`max_string`/`max_depth` truncation.
+- [ ] Not portable / pending: struct introspection, `ReprHighlighter` syntax coloring.
 
 ### 4.8 JSON Viewer (`rich::json::json`) *(Completed - Zero Dependencies)*
 - [x] **Recursive-descent parser (`src/rich-cpp/json/Json.h`)**: objects, arrays, strings (UTF-8 + `\uXXXX` escapes, surrogate pairs), numbers, booleans, null — no third-party libraries.
