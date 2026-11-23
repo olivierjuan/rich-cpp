@@ -23,6 +23,8 @@
 #include <highlight/Syntax.h>
 #include <markdown/Markdown.h>
 #include <iostream>
+#include <sstream>
+#include <cstdio>
 #include <string>
 #include <vector>
 #ifdef _WIN32
@@ -496,12 +498,12 @@ int main(int argc, char* argv[]) {
             o.line_no = line;
             return o;
         };
-        lc.log({std::string_view("hello world"), std::string_view("42")}, lo(331));
         lc.log({std::string_view("hello world"), std::string_view("42")}, lo(332));
-        lc.log({std::string_view("[red]styled[/] message")}, lo(333));
+        lc.log({std::string_view("hello world"), std::string_view("42")}, lo(333));
+        lc.log({std::string_view("[red]styled[/] message")}, lo(334));
         const std::string fifty(50, 'a');
-        lc.log({std::string_view(fifty)}, lo(334));
-        lc.log({}, lo(335));
+        lc.log({std::string_view(fifty)}, lo(335));
+        lc.log({}, lo(336));
         std::cout << lc.export_text();
         return 0;
     } else if (test_name == "log_sgr") {
@@ -1290,6 +1292,96 @@ int main(int argc, char* argv[]) {
         show(sp, 0.2);
 
         std::cout << t_oss.str();
+        return 0;
+    } else if (test_name == "live_extras") {
+        // Live extras: non-TTY final frame (no trailing newline), transient /
+        // screen suppression, vertical overflow (crop/ellipsis/visible) via the
+        // LiveRender-equivalent static helper. Mirrors oracle_gen live_extras.
+        std::ostringstream out;
+
+        auto text = [](const std::string& s) {
+            return rich::AnyRenderable(rich::Text{s, {}});
+        };
+
+        // (a) basic final frame
+        {
+            rich::live::Live live(text("hello"), 4.0, false, out, 60);
+            live.start();
+            live.stop();
+        }
+        std::cout << out.str();
+        out.str("");
+        std::cout << '\n';
+
+        // (b) update then stop
+        {
+            rich::live::Live live(text("one"), 4.0, false, out, 60);
+            live.update_renderable(text("two"));
+            live.start();
+            live.stop();
+        }
+        std::cout << out.str();
+        out.str("");
+        std::cout << '\n';
+
+        // (c) transient -> nothing
+        {
+            rich::live::Live live(text("gone"), 4.0, true, out, 60);
+            live.start();
+            live.stop();
+        }
+        std::cout << out.str();
+        out.str("");
+        std::cout << '\n';
+
+        // (d) screen -> transient forced -> nothing
+        {
+            rich::live::Live live(text("screen"), 4.0, false, out, 60, true, "ellipsis");
+            live.start();
+            live.stop();
+        }
+        std::cout << out.str();
+        out.str("");
+        std::cout << '\n';
+
+        // (e) vertical overflow (height 25, width 60)
+        auto big = [] {
+            std::vector<std::vector<rich::Segment>> lines;
+            for (int i = 0; i < 30; ++i) {
+                char buf[8];
+                std::snprintf(buf, sizeof buf, "L%02d", i);
+                lines.push_back({{std::string(buf), {}}});
+            }
+            return lines;
+        };
+        auto emit = [](std::vector<std::vector<rich::Segment>> lines) {
+            for (size_t i = 0; i < lines.size(); ++i) {
+                for (const auto& s : lines[i]) std::cout << s.text;
+                if (i + 1 < lines.size()) std::cout << '\n';
+            }
+        };
+        emit(rich::live::Live::apply_vertical_overflow(big(), 25, "crop", 60));
+        std::cout << '\n';
+        emit(rich::live::Live::apply_vertical_overflow(big(), 25, "ellipsis", 60));
+        std::cout << '\n';
+        emit(rich::live::Live::apply_vertical_overflow(big(), 25, "visible", 60));
+        std::cout << '\n';
+        emit(rich::live::Live::apply_vertical_overflow(
+            std::vector<std::vector<rich::Segment>>{{{std::string("short"), {}}}},
+            25, "crop", 60));
+        std::cout << '\n';
+
+        // (f) get_renderable equivalent: fresh renderable per live instance
+        {
+            rich::live::Live l1(text("first"), 4.0, false, out, 60);
+            l1.start();
+            l1.stop();
+            rich::live::Live l2(text("second"), 4.0, false, out, 60);
+            l2.start();
+            l2.stop();
+        }
+        std::cout << out.str();
+        std::cout << '\n';
         return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";

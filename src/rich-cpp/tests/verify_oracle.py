@@ -59,6 +59,7 @@ TEST_CASES = [
     "columns_extras",
     "progress_extras",
     "spinner_registry",
+    "live_extras",
 ]
 
 import os

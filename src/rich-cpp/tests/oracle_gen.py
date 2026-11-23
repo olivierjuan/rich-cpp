@@ -1,6 +1,7 @@
 import io
 import sys
 from rich.console import Console
+from rich.live import Live
 from rich.panel import Panel
 from rich.screen import Screen
 from rich.table import Table
@@ -906,6 +907,51 @@ def generate_python_oracle(test_name: str) -> str:
         show(sp, 0.2)
 
         return sink2.getvalue()
+    elif test_name == "live_extras":
+        # Non-interactive console: Live emits exactly ONE final frame on stop
+        # (the render hook appends LiveRender to the stop-time print(Control()),
+        # which carries no end of its own -> no trailing newline). transient /
+        # screen (screen forces transient) emit nothing. set_alt_screen writes
+        # no codes on a non-terminal, so screen=="" output.
+        with Live("hello", console=c, auto_refresh=False):
+            pass
+        c.line()
+
+        with Live("one", console=c, auto_refresh=False) as live:
+            live.update("two")
+        c.line()
+
+        with Live("gone", console=c, auto_refresh=False, transient=True):
+            pass
+        c.line()
+
+        with Live("screen", console=c, auto_refresh=False, screen=True):
+            pass
+        c.line()
+
+        # vertical_overflow via the LiveRender renderable surface (deterministic
+        # on a height=25 record console).
+        from rich.live_render import LiveRender
+
+        big = "\n".join(f"L{i:02d}" for i in range(30))
+        c.print(LiveRender(big, vertical_overflow="crop"))
+        c.line()
+        c.print(LiveRender(big, vertical_overflow="ellipsis"))
+        c.line()
+        c.print(LiveRender(big, vertical_overflow="visible"))
+        c.line()
+        c.print(LiveRender(Text("short"), vertical_overflow="crop"))
+        c.line()
+
+        # get_renderable callable (same final-frame path as update())
+        state = {"v": "first"}
+        with Live(console=c, auto_refresh=False, get_renderable=lambda: state["v"]):
+            pass
+        state["v"] = "second"
+        with Live(console=c, auto_refresh=False, get_renderable=lambda: state["v"]):
+            pass
+        c.line()
+        return c.export_text()
     return c.export_text()
 
 def main():

@@ -35,6 +35,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstring>
 #include <mutex>
 #include <ostream>
 #include <thread>
@@ -97,15 +98,22 @@ inline std::vector<std::vector<rich::Segment>> segments_to_lines(std::vector<ric
 class Live {
 public:
     // renderable: what to show; refresh_per_second: redraw rate (Python default 4.0);
-    // transient: if true, erase the live region entirely on stop.
+    // transient: if true, erase the live region entirely on stop;
+    // screen: alternate-screen mode (Python forces transient=True when screen);
+    // vertical_overflow: "crop" | "ellipsis" | "visible" (Python default "ellipsis";
+    //   forced to "visible" for the final stop frame, matching Live.stop()).
     explicit Live(rich::AnyRenderable renderable,
                   double refresh_per_second = 4.0,
                   bool transient = false,
                   std::ostream& os = std::cout,
-                  size_t width = 0)
+                  size_t width = 0,
+                  bool screen = false,
+                  const char* vertical_overflow = "ellipsis")
         : renderable_(std::move(renderable)),
           refresh_per_second_(refresh_per_second > 0 ? refresh_per_second : 4.0),
-          transient_(transient),
+          transient_(transient || screen),
+          screen_(screen),
+          vertical_overflow_(vertical_overflow ? vertical_overflow : "ellipsis"),
           os_(os),
           console_(width > 0 ? &owned_console_ : &default_console_),
           owned_console_(os, ConsoleOptions{.width = width}),
@@ -131,9 +139,19 @@ public:
         started_ = true;
 
         if (!tty_) {
-            // Degrade: single final plain render, no control codes, no thread.
-            render_plain_locked();
+            // Degrade: Python's process_renderables emits the final frame only
+            // when not transient (screen forces transient). LiveRender renders
+            // without a trailing newline, so the frame is joined with "\n"
+            // and nothing follows the last line.
+            if (!transient_) render_plain_locked();
             return;
+        }
+
+        if (screen_) {
+            // Alternate screen (Python Console.set_alt_screen(True)).
+            os_ << "\x1b[?1049h";
+            os_.flush();
+            alt_screen_ = true;
         }
 
         worker_ = std::jthread([this](std::stop_token st) {
@@ -162,7 +180,21 @@ public:
             worker_.join();
         }
 
-        if (transient_ && prev_height_ > 0) {
+        // Python stop(): force vertical_overflow="visible", render one final
+        // frame, then leave the alternate screen (if any).
+        if (!alt_screen_) {
+            const char* saved = vertical_overflow_;
+            vertical_overflow_ = "visible";
+            refresh_locked();
+            vertical_overflow_ = saved;
+        }
+        if (alt_screen_) {
+            os_ << "\x1b[?1049l";
+            os_.flush();
+            alt_screen_ = false;
+        }
+
+        if (transient_ && prev_height_ > 0 && !screen_) {
             clear_region(prev_height_);
         }
     }
@@ -170,6 +202,36 @@ public:
     bool started() const {
         std::lock_guard<std::mutex> lk(mu_);
         return started_;
+    }
+
+    // Vertical overflow handling (port of LiveRender.__rich_console__):
+    //   "crop"     -> keep the first `height` lines;
+    //   "ellipsis" -> keep the first `height - 1` lines and append one centered
+    //                 "..." line (Text("...", justify="center") at `width`);
+    //   "visible"  -> unchanged.
+    // Lines carry no trailing newlines. Exposed so callers (and the oracle)
+    // can drive the same logic LiveRender uses.
+    static std::vector<std::vector<rich::Segment>> apply_vertical_overflow(
+        std::vector<std::vector<rich::Segment>> lines, size_t height,
+        const char* method, size_t width = 80) {
+        if (method && height > 0 && lines.size() > height) {
+            if (std::strcmp(method, "crop") == 0) {
+                lines.resize(height);
+            } else if (std::strcmp(method, "ellipsis") == 0) {
+                lines.resize(height > 0 ? height - 1 : 0);
+                size_t text_width = std::min<size_t>(width, 3);
+                size_t lead = (width - text_width) / 2;
+                size_t trail = width - text_width - lead;
+                std::string line(text_width, ' ');
+                for (size_t i = 0; i < text_width; ++i) line[i] = '.';
+                std::string padded(lead, ' ');
+                padded += line;
+                padded.append(trail, ' ');
+                lines.push_back({{padded, {}}});
+            }
+            // "visible" (or unknown): unchanged
+        }
+        return lines;
     }
 
 private:
@@ -200,18 +262,25 @@ private:
         return w > 0 ? w : 80;
     }
 
-    // Plain text render (no ANSI, no control codes) used for non-TTY degradation.
+    // Plain text render (no ANSI, no control codes) used for non-TTY
+    // degradation. Mirrors Python's final frame: lines joined by "\n" with
+    // NO trailing newline (LiveRender renders pad=False, end=""; the hook
+    // appends it to a print(Control()) that carries no end of its own).
     void render_plain_locked() {
-        for (const auto& line : current_lines_locked()) {
-            for (const auto& s : line) os_ << s.text;
-            os_ << '\n';
+        auto lines = current_lines_locked();
+        for (size_t i = 0; i < lines.size(); ++i) {
+            for (const auto& s : lines[i]) os_ << s.text;
+            if (i + 1 < lines.size()) os_ << '\n';
         }
         os_.flush();
     }
 
     // One refresh tick: rewrite the region in place. Caller holds mu_.
+    // Vertical overflow is applied at the console height (Python applies it in
+    // LiveRender.__rich_console__ against options.size.height).
     void refresh_locked() {
-        auto lines = current_lines_locked();
+        auto lines = apply_vertical_overflow(current_lines_locked(), console_height(),
+                                             vertical_overflow_);
         if (lines.empty()) lines.push_back({});
 
         std::string buf;
@@ -247,9 +316,18 @@ private:
         prev_height_ = 0;
     }
 
+    // Console height for overflow decisions (Python: options.size.height;
+    // Console.size.height falls back to 25 when unset/non-terminal).
+    size_t console_height() const {
+        size_t h = console_->height();
+        return h > 0 ? h : 25;
+    }
+
     rich::AnyRenderable renderable_;
     double refresh_per_second_;
     bool transient_;
+    bool screen_{false};
+    const char* vertical_overflow_{"ellipsis"};
     std::ostream& os_;
     bool tty_;
 
@@ -257,6 +335,7 @@ private:
     bool started_{false};
     std::jthread worker_;
     size_t prev_height_{0};
+    bool alt_screen_{false};
 
     // Console used only for width/render context (never writes through it).
     Console owned_console_;   // used when an explicit width was given
