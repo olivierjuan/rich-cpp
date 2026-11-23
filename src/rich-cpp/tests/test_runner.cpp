@@ -1421,6 +1421,98 @@ int main(int argc, char* argv[]) {
         }
         std::cout << p_oss.str();
         return 0;
+    } else if (test_name == "syntax_extras") {
+        // Raw SGR: pygments engine + generated themes (truecolor), mirroring
+        // oracle_gen.syntax_extras.
+        rich::ConsoleOptions s_opts{.width = 60, .force_terminal = true,
+                                    .color_system = rich::ColorSystem::Truecolor,
+                                    .no_color = false, .legacy_windows = false};
+        std::ostringstream s_oss;
+        rich::Console sc(s_oss, s_opts);
+        const std::string py = "def f(x):\n    \"\"\"doc.\"\"\"\n    return x + 1\n";
+        sc.print(rich::highlight::syntax(py, "python"));
+        sc.print(rich::highlight::syntax(
+            "const x = 42;\n// c\nconsole.log(x);\n", "javascript"));
+        sc.print(rich::highlight::syntax(
+            "{\"a\": [1, 2.5, true, null], \"b\": \"s\"}\n", "json"));
+        sc.print(rich::highlight::syntax("#!/bin/bash\necho hi\nexport P=1\n",
+                                         "bash"));
+        sc.print(rich::highlight::syntax("SELECT id, name FROM t WHERE id = 5;\n",
+                                         "sql"));
+        sc.print(rich::highlight::syntax("func main() {\n\tfmt.Println(1)\n}\n",
+                                         "go"));
+        sc.print(rich::highlight::syntax("fn main() {\n    let x = 1;\n}\n",
+                                         "rust"));
+        sc.print(rich::highlight::syntax("-- c\nlocal x = 1\nprint(x)\n", "lua"));
+        sc.print(rich::highlight::syntax(
+            "cmake_minimum_required(VERSION 3.0)\nadd_executable(a m.c)\n",
+            "cmake"));
+        sc.print(rich::highlight::syntax("# T\n\nsome **b**\n", "markdown"));
+        sc.print(rich::highlight::syntax("[sec]\nkey = value\n", "ini"));
+        sc.print(rich::highlight::syntax("# t\n[table]\nx = 1\n", "toml"));
+        sc.print(rich::highlight::syntax("\\section{T}\nSome $x^2$ math.\n",
+                                         "tex"));
+        for (const char* theme : {"monokai", "dracula", "solarized-dark",
+                                  "github-dark", "nord", "tango"}) {
+            sc.print(rich::AnyRenderable(
+                rich::highlight::Syntax{py, "python", theme, {}}));
+        }
+        {
+            rich::highlight::SyntaxOptions so{};
+            so.line_numbers = true;
+            so.start_line = 10;
+            so.highlight_lines = {12};
+            sc.print(rich::AnyRenderable(
+                rich::highlight::Syntax{py, "python", "monokai", so}));
+        }
+        {
+            rich::highlight::SyntaxOptions so{};
+            so.word_wrap = true;
+            sc.print(rich::AnyRenderable(rich::highlight::Syntax{
+                "int main() { return very_long_line_value + another + third;\n}\n",
+                "cpp", "monokai", so}));
+        }
+        {
+            rich::highlight::SyntaxOptions so{};
+            so.tab_size = 8;
+            sc.print(rich::AnyRenderable(rich::highlight::Syntax{
+                "func main() {\n\tfmt.Println(1)\n}\n", "go", "monokai", so}));
+        }
+        {
+            rich::highlight::SyntaxOptions so{};
+            so.line_range_start = 2;
+            so.line_range_end = 4;
+            sc.print(rich::AnyRenderable(
+                rich::highlight::Syntax{py, "python", "monokai", so}));
+        }
+        {
+            rich::highlight::SyntaxOptions so{};
+            so.code_width = 30;
+            sc.print(rich::AnyRenderable(
+                rich::highlight::Syntax{py, "python", "monokai", so}));
+        }
+        {
+            rich::highlight::SyntaxOptions so{};
+            so.indent_guides = true;
+            sc.print(rich::AnyRenderable(
+                rich::highlight::Syntax{py, "python", "monokai", so}));
+        }
+        {
+            rich::highlight::SyntaxOptions so{};
+            so.dedent = true;
+            sc.print(rich::AnyRenderable(rich::highlight::Syntax{
+                "    a = 1\n    b = 2\n\n    c = 3\n", "python", "monokai",
+                so}));
+        }
+        {
+            rich::highlight::SyntaxOptions so{};
+            so.background_color = rich::Color::rgb(0x1e, 0x2e, 0x3e);
+            sc.print(rich::AnyRenderable(
+                rich::highlight::Syntax{py, "python", "monokai", so}));
+        }
+        sc.print(rich::highlight::syntax("hello world\n", "nosuchlexer"));
+        std::cout << s_oss.str();
+        return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
         return 1;

@@ -1247,7 +1247,7 @@ struct ElCodeBlock : El {
         highlight::SyntaxOptions so{};
         so.word_wrap = true;
         so.padding = 1;
-        highlight::Syntax s{std::move(code), lexer, so};
+        highlight::Syntax s{std::move(code), lexer, "monokai", so};
         return s.render(*c.con, c.opt);
     }
 };

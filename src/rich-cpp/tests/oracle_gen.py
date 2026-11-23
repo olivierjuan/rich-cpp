@@ -971,6 +971,49 @@ def generate_python_oracle(test_name: str) -> str:
         c2.print((0.25, -2.5e3, "end"))
         c2.print(Pretty({"k": {"deep": [0.25, None]}}, expand_all=True))
         return sink2.getvalue()
+    elif test_name == "syntax_extras":
+        # Raw SGR stream: pygments engine (69 generated lexers + native JSON)
+        # with generated themes, truecolor token styles, blended line-number
+        # styles, and the full option surface (word_wrap, tab_size,
+        # line_range, highlight_lines, code_width, indent_guides, dedent,
+        # background_color, unknown-lexer fallback).
+        from rich.syntax import Syntax
+
+        sink2 = io.StringIO()
+        c2 = Console(file=sink2, width=60, height=25, force_terminal=True,
+                     color_system="truecolor", no_color=False,
+                     legacy_windows=False)
+        py = ("def f(x):\n"
+              '    """doc."""\n'
+              "    return x + 1\n")
+        c2.print(Syntax(py, "python"))
+        c2.print(Syntax("const x = 42;\n// c\nconsole.log(x);\n", "javascript"))
+        c2.print(Syntax('{"a": [1, 2.5, true, null], "b": "s"}\n', "json"))
+        c2.print(Syntax("#!/bin/bash\necho hi\nexport P=1\n", "bash"))
+        c2.print(Syntax("SELECT id, name FROM t WHERE id = 5;\n", "sql"))
+        c2.print(Syntax("func main() {\n\tfmt.Println(1)\n}\n", "go"))
+        c2.print(Syntax("fn main() {\n    let x = 1;\n}\n", "rust"))
+        c2.print(Syntax("-- c\nlocal x = 1\nprint(x)\n", "lua"))
+        c2.print(Syntax("cmake_minimum_required(VERSION 3.0)\nadd_executable(a m.c)\n", "cmake"))
+        c2.print(Syntax("# T\n\nsome **b**\n", "markdown"))
+        c2.print(Syntax("[sec]\nkey = value\n", "ini"))
+        c2.print(Syntax("# t\n[table]\nx = 1\n", "toml"))
+        c2.print(Syntax("\\section{T}\nSome $x^2$ math.\n", "tex"))
+        for theme in ("monokai", "dracula", "solarized-dark",
+                      "github-dark", "nord", "tango"):
+            c2.print(Syntax(py, "python", theme=theme))
+        c2.print(Syntax(py, "python", line_numbers=True, start_line=10,
+                        highlight_lines={12}))
+        c2.print(Syntax("int main() { return very_long_line_value + another + third;\n}\n",
+                        "cpp", word_wrap=True))
+        c2.print(Syntax("func main() {\n\tfmt.Println(1)\n}\n", "go", tab_size=8))
+        c2.print(Syntax(py, "python", line_range=(2, 4)))
+        c2.print(Syntax(py, "python", code_width=30))
+        c2.print(Syntax(py, "python", indent_guides=True))
+        c2.print(Syntax("    a = 1\n    b = 2\n\n    c = 3\n", "python", dedent=True))
+        c2.print(Syntax(py, "python", background_color="#1e2e3e"))
+        c2.print(Syntax("hello world\n", "nosuchlexer"))
+        return sink2.getvalue()
     return c.export_text()
 
 def main():

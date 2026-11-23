@@ -1,32 +1,41 @@
 #pragma once
-// Syntax renderable — port of Python Rich's rich.syntax.Syntax (monokai theme).
+// Syntax renderable — port of Python Rich's rich.syntax.Syntax.
 //
-// Pipeline parity (rich/syntax.py):
-//   _process_code (trailing \n, dedent, expandtabs)
-//   -> regex lexer (python / cpp / json / plain text fallback) emitting
-//      pygments token classes
-//   -> monokai token styles (PygmentsStyle hierarchy, resolved)
-//   -> layout: simple path (render_lines: crop+pad to code width) or complex
-//      path (line split, optional line_range slice, indent guides, per-line
-//      crop/pad or word wrap, optional line-number gutter).
+// Pipeline parity (rich/syntax.py, rich 15.0.0):
+//   _process_code (trailing \n if missing, dedent, expandtabs)
+//   -> pygments-compatible lexer: 69 generated regex lexers (see
+//      SyntaxLexers.h) + native JSON lexer, exact pygments state machine
+//      (highlight/Pygments.h); unknown lexer name -> plain text (rich's
+//      lexer property returns None on ClassNotFound)
+//   -> theme styles (generated Pygments themes, SyntaxThemes.h):
+//      per-token style via style_for_token hierarchy walk; background =
+//      theme background unless SyntaxOptions.background_color overrides it
+//      (post-tokenization, like rich's text.stylize("on <color>"))
+//   -> layout: line split, optional line_range slice, indent guides
+//      (theme Comment + dim + bg, complex path forces italic=False),
+//      per-line crop/pad or word wrap, optional line-number gutter
+//      (number styles: truecolor/256 = bg + Token.Text style + blended
+//      fg (0.3 / 0.9 cross-fade, bold for highlight); else dim / dim=False).
 //
-// Layout quirk preserved from Python: with line_numbers, each wrapped line is
-// preceded by a col_width+1 gutter, so total line width is
+// Layout quirk preserved from Python: with line_numbers, each wrapped line
+// is preceded by a col_width+1 gutter, so total line width is
 // col_width + 1 + code_width (the console width when code_width=None).
 // Continuation lines of a wrapped line carry the blank gutter.
-//
-// Lexers are regex-based ports that match pygments' token streams for the
-// standard code shapes this library targets; unknown lexer names fall back to
-// plain text (single Token.Text), exactly like Python's "text" lexer.
 
 #include <rich_core.h>
+#include "Pygments.h"
+#include "SyntaxLexers.h"
+#include "SyntaxThemes.h"
 #include <Text.h>
 
+#include <algorithm>
 #include <cctype>
+#include <cstring>
 #include <cstdint>
 #include <set>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -44,15 +53,19 @@ struct SyntaxOptions {
     bool word_wrap = false;
     bool indent_guides = false;
     // Python Syntax padding=1 (markdown code blocks): the rendered code is
-    // wrapped in Padding(pad, style=monokai-bg, expand=True) — one blank
+    // wrapped in Padding(pad, style=theme-bg, expand=True) — one blank
     // bg-filled line at the top and bottom at the full console width and one
     // bg-filled cell on each side of every code line.
     int padding = 0;
+    // Python background_color: optional background override, applied to the
+    // whole code block (token styles included).
+    std::optional<Color> background_color;
 };
 
 struct Syntax {
     std::string code;
-    std::string lexer; // "python" | "cpp" | "json" | other -> plain text
+    std::string lexer; // any pygments name (case-insensitive); "" -> text
+    std::string theme = "monokai"; // pygments theme name; unknown -> "default"
     SyntaxOptions opts{};
 
     std::vector<rich::Segment> render(const rich::Console& c, const rich::Options& opt) const;
@@ -61,521 +74,112 @@ struct Syntax {
 
 namespace detail {
 
-// ── token classes (pygments hierarchy flattened to what monokai styles) ─────
-enum class Tok {
-    Text,
-    Whitespace,
-    Comment,      // Comment / .Single / .Multiline
-    Keyword,      // Keyword / .Constant / .Type / .Declaration
-    KeywordNamespace, // Keyword.Namespace
-    Name,
-    NameFunc,     // Name.Function
-    NameBuiltin,  // Name.Builtin
-    NameClass,    // Name.Class
-    Operator,     // Operator
-    OperatorWord, // Operator.Word (-> Operator in monokai)
-    Punctuation,
-    Number,       // Literal.Number.*
-    String,       // Literal.String
-    StringDoc,    // Literal.String.Doc
-};
+// ── theme helpers ───────────────────────────────────────────────────────────
 
-struct Token {
-    Tok kind;
-    std::string text;
-};
-
-// monokai background (#272822)
-inline const Color& mono_bg() {
-    static const Color c = Color::rgb(0x27, 0x28, 0x22);
-    return c;
-}
-
-// monokai style for a token class (pygments style_for_token hierarchy:
-// most-specific entry, walking up; the base Token entry #f8f8f2 covers all).
-// Python styles here always carry explicit bold/italic/underline=False, so
-// the flags are reported as set (explicit_bits) for repr parity.
-inline Style token_style(Tok k) {
-    Style s;
-    s.bg_color = mono_bg();
-    s.explicit_bits = 0x01 | 0x04 | 0x08; // bold, italic, underline explicit False
-    switch (k) {
-    case Tok::Comment:
-        s.color = Color::rgb(0x95, 0x90, 0x77);
-        break;
-    case Tok::Keyword:
-        s.color = Color::rgb(0x66, 0xD9, 0xEF);
-        break;
-    case Tok::KeywordNamespace:
-        s.color = Color::rgb(0xFF, 0x46, 0x89);
-        break;
-    case Tok::NameFunc:
-    case Tok::NameBuiltin:
-    case Tok::NameClass:
-        s.color = Color::rgb(0xA6, 0xE2, 0x2E);
-        break;
-    case Tok::Operator:
-    case Tok::OperatorWord:
-        s.color = Color::rgb(0xFF, 0x46, 0x89);
-        break;
-    case Tok::Number:
-        s.color = Color::rgb(0xAE, 0x81, 0xFF);
-        break;
-    case Tok::String:
-    case Tok::StringDoc:
-        s.color = Color::rgb(0xE6, 0xDB, 0x74);
-        break;
-    default: // Text, Whitespace, Name, Punctuation -> #f8f8f2
-        s.color = Color::rgb(0xF8, 0xF8, 0xF2);
-        break;
+inline Color hex_color(const char* hex, const Color& fallback) {
+    if (hex && hex[0] && hex[1] && hex[2] && hex[3] && hex[4] && hex[5]) {
+        auto hv = [](char c) -> int {
+            return (c >= '0' && c <= '9') ? c - '0'
+                   : (c >= 'a' && c <= 'f') ? c - 'a' + 10
+                   : (c >= 'A' && c <= 'F') ? c - 'A' + 10
+                                            : 0;
+        };
+        return Color::rgb(uint8_t(hv(hex[0]) * 16 + hv(hex[1])),
+                          uint8_t(hv(hex[2]) * 16 + hv(hex[3])),
+                          uint8_t(hv(hex[4]) * 16 + hv(hex[5])));
     }
-    return s;
+    return fallback;
 }
 
-inline bool is_ident_start(char c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
-}
-inline bool is_ident_char(char c) {
-    return is_ident_start(c) || (c >= '0' && c <= '9');
-}
-inline bool is_space_tab(char c) { return c == ' ' || c == '\t'; }
-
-// ── python lexer ─────────────────────────────────────────────────────────────
-// Matches pygments PythonLexer on the common corpus: \n -> Whitespace;
-// horizontal ws -> Text (expr state rule [^\S\n]+); the docstring rule
-// ^(\s*)("""...""") takes the indent as Whitespace; #... -> Comment;
-// def/class consume following ws as Whitespace and name the next word
-// Name.Function/Name.Class; in/is/not/and/or -> Operator.Word.
-inline std::vector<Token> lex_python(std::string_view code) {
-    std::vector<Token> out;
-    auto push = [&](Tok k, size_t a, size_t b) {
-        if (b > a)
-            out.push_back({k, std::string(code.substr(a, b - a))});
-    };
-    static const char* const kw[] = {
-        "def",     "class",   "if",     "elif",    "else",   "for",     "while",
-        "return",  "import",  "from",   "as",      "with",   "try",     "except",
-        "finally", "raise",   "pass",   "break",   "continue", "global", "nonlocal",
-        "assert",  "del",     "yield",  "lambda",  "async",  "await",   "None",
-        "True",    "False",   "is",     "not",
-    };
-    auto is_kw = [](std::string_view w) -> int {
-        for (size_t i = 0; i < sizeof(kw) / sizeof(kw[0]); ++i)
-            if (w == kw[i])
-                return static_cast<int>(i);
-        return -1;
-    };
-    static const char* const builtins[] = {
-        "print", "range", "len", "str", "int", "float", "list", "dict", "set",
-        "tuple", "bool", "bytes", "open", "type", "isinstance", "issubclass",
-        "super", "enumerate", "zip", "map", "filter", "sorted", "reversed",
-        "repr", "abs", "min", "max", "sum", "any", "all", "round", "format",
-        "iter", "next", "property", "staticmethod", "classmethod", "Exception",
-        "ValueError", "TypeError", "KeyError", "IndexError", "RuntimeError",
-        "ImportError", "NameError", "OSError", "StopIteration",
-    };
-    auto is_builtin = [](std::string_view w) {
-        for (const char* b : builtins)
-            if (w == b)
-                return true;
-        return false;
-    };
-
-    const size_t n = code.size();
-    size_t i = 0;
-    bool after_def = false, after_class = false;
-    while (i < n) {
-        const char c = code[i];
-        if (c == '\n') {
-            push(Tok::Whitespace, i, i + 1);
-            ++i;
-            after_def = after_class = false;
-            continue;
-        }
-        if (is_space_tab(c)) {
-            size_t j = i;
-            while (j < n && is_space_tab(code[j]))
-                ++j;
-            push(Tok::Text, i, j);
-            i = j;
-            continue;
-        }
-        if (c == '#') {
-            size_t j = i;
-            while (j < n && code[j] != '\n')
-                ++j;
-            push(Tok::Comment, i, j);
-            i = j;
-            continue;
-        }
-        // docstring (pygments ^(\s*)(\"\"\"...\"\"\")): a triple quote at the
-        // first non-whitespace of a line; the whole run is String.Doc (the
-        // leading indent keeps its Text/Whitespace color — same in monokai).
-        if (c == '"' && i + 2 < n && code[i + 1] == '"' && code[i + 2] == '"') {
-            size_t ls = i;
-            while (ls > 0 && code[ls - 1] != '\n')
-                --ls;
-            bool only_ws = true;
-            for (size_t p = ls; p < i; ++p)
-                if (!is_space_tab(code[p])) {
-                    only_ws = false;
-                    break;
-                }
-            if (only_ws) {
-                const size_t k = code.find("\"\"\"", i + 3);
-                if (k != std::string_view::npos) {
-                    push(Tok::StringDoc, i, k + 3);
-                    i = k + 3;
-                    continue;
-                }
+// rich PygmentsSyntaxTheme.get_style_for_token: pygments
+// StyleMeta resolves parent inheritance at class creation, so the generated
+// table is the complete per-token lookup — exact match only; a missing
+// token is a KeyError in Python, which rich maps to Style.null() (no span).
+// color "" -> #000000, bg "" -> theme background; bold/italic/underline
+// explicit only when set True (False -> not explicit, same SGR either way).
+inline Style theme_token_style(const pg::PgTheme* th, const Color& theme_bg,
+                               const char* tok) {
+    for (size_t i = 0; i < th->n_entries; ++i) {
+        const pg::PgThemeEntry& e = th->entries[i];
+        if (strcmp(e.token, tok) == 0) {
+            Style s;
+            s.color = hex_color(e.color, Color::rgb(0, 0, 0));
+            s.bg_color = hex_color(e.bg, theme_bg);
+            if (e.bold == 1) {
+                s.bold = true;
+                s.explicit_bits |= 0x0001;
             }
-        }
-        if (c == '"' || c == '\'') {
-            const char q = c;
-            size_t j = i + 1;
-            while (j < n && code[j] != q) {
-                if (code[j] == '\\')
-                    ++j;
-                ++j;
+            if (e.italic == 1) {
+                s.italic = true;
+                s.explicit_bits |= 0x0004;
             }
-            if (j < n)
-                ++j;
-            push(Tok::String, i, j);
-            i = j;
-            continue;
-        }
-        if (is_ident_start(c)) {
-            size_t j = i;
-            while (j < n && is_ident_char(code[j]))
-                ++j;
-            const std::string_view w = code.substr(i, j - i);
-            const int kwi = is_kw(w);
-            if (kwi == 0) { // def — following ws is Whitespace, name -> Name.Function
-                push(Tok::Keyword, i, j);
-                size_t k = j;
-                while (k < n && is_space_tab(code[k]))
-                    ++k;
-                push(Tok::Whitespace, j, k);
-                i = k;
-                after_def = true;
-                after_class = false;
-            } else if (kwi == 1) { // class
-                push(Tok::Keyword, i, j);
-                size_t k = j;
-                while (k < n && is_space_tab(code[k]))
-                    ++k;
-                push(Tok::Whitespace, j, k);
-                i = k;
-                after_class = true;
-                after_def = false;
-            } else if (after_def) {
-                push(Tok::NameFunc, i, j);
-                after_def = after_class = false;
-                i = j;
-            } else if (after_class) {
-                push(Tok::NameClass, i, j);
-                after_def = after_class = false;
-                i = j;
-            } else if (kwi >= 2 && kwi <= 26) {
-                push(Tok::Keyword, i, j);
-                after_def = after_class = false;
-                i = j;
-            } else if (kwi >= 27) { // is / not
-                push(Tok::OperatorWord, i, j);
-                after_def = after_class = false;
-                i = j;
-            } else if (w == "in" || w == "and" || w == "or") {
-                push(Tok::OperatorWord, i, j);
-                after_def = after_class = false;
-                i = j;
-            } else if (is_builtin(w)) {
-                push(Tok::NameBuiltin, i, j);
-                after_def = after_class = false;
-                i = j;
-            } else {
-                push(Tok::Name, i, j);
-                after_def = after_class = false;
-                i = j;
+            if (e.underline == 1) {
+                s.underline = true;
+                s.explicit_bits |= 0x0008;
             }
-            continue;
+            return s;
         }
-        if (c >= '0' && c <= '9') {
-            size_t j = i;
-            if (c == '0' && j + 1 < n && (code[j + 1] == 'x' || code[j + 1] == 'X')) {
-                j += 2;
-                while (j < n && isxdigit(static_cast<unsigned char>(code[j])))
-                    ++j;
-            } else {
-                while (j < n && isdigit(static_cast<unsigned char>(code[j])))
-                    ++j;
-                if (j < n && code[j] == '.') {
-                    ++j;
-                    while (j < n && isdigit(static_cast<unsigned char>(code[j])))
-                        ++j;
-                }
-                if (j < n && (code[j] == 'e' || code[j] == 'E')) {
-                    size_t k = j + 1;
-                    if (k < n && (code[k] == '+' || code[k] == '-'))
-                        ++k;
-                    if (k < n && isdigit(static_cast<unsigned char>(code[k]))) {
-                        k = j + 1;
-                        while (k < n && (k == j + 1 ||
-                                         isdigit(static_cast<unsigned char>(code[k])) ||
-                                         (code[k] == '+' || code[k] == '-')))
-                            ++k;
-                        j = k;
-                    }
-                }
-            }
-            push(Tok::Number, i, j);
-            i = j;
-            continue;
-        }
-        if (c == '+' || c == '-' || c == '*' || c == '/' || c == '%' || c == '<' ||
-            c == '>' || c == '=' || c == '!' || c == '&' || c == '|' || c == '^' ||
-            c == '~' || c == '@') {
-            push(Tok::Operator, i, i + 1);
-            ++i;
-            continue;
-        }
-        if (c == '(' || c == ')' || c == '[' || c == ']' || c == '{' || c == '}' ||
-            c == ',' || c == ':' || c == ';' || c == '.') {
-            push(Tok::Punctuation, i, i + 1);
-            ++i;
-            continue;
-        }
-        push(Tok::Text, i, i + 1);
-        ++i;
     }
-    return out;
+    return Style{}; // no entry at all (Style.null())
 }
 
-// ── cpp lexer ────────────────────────────────────────────────────────────────
-// All whitespace (incl. \n) -> Whitespace; // and /* */ comments (// takes the
-// trailing newline); type keywords -> Keyword.Type, control -> Keyword; a name
-// followed by optional ws + '(' -> Name.Function; single-char operators.
-inline std::vector<Token> lex_cpp(std::string_view code) {
-    std::vector<Token> out;
-    auto push = [&](Tok k, size_t a, size_t b) {
-        if (b > a)
-            out.push_back({k, std::string(code.substr(a, b - a))});
-    };
-    auto kw_type = [](std::string_view w) {
-        return w == "int" || w == "float" || w == "double" || w == "char" ||
-               w == "bool" || w == "void" || w == "long" || w == "short" ||
-               w == "unsigned" || w == "signed" || w == "const" ||
-               w == "constexpr" || w == "static" || w == "auto" || w == "struct" ||
-               w == "union" || w == "enum" || w == "class";
-    };
-    auto kw_ctrl = [](std::string_view w) {
-        return w == "for" || w == "if" || w == "else" || w == "while" ||
-               w == "switch" || w == "case" || w == "default" || w == "break" ||
-               w == "continue" || w == "do" || w == "return" || w == "goto" ||
-               w == "new" || w == "delete" || w == "sizeof" || w == "namespace" ||
-               w == "using" || w == "template" || w == "typename" ||
-               w == "public" || w == "private" || w == "protected" ||
-               w == "virtual" || w == "final" || w == "override" || w == "try" ||
-               w == "catch" || w == "throw" || w == "noexcept" || w == "this" ||
-               w == "operator" || w == "inline" || w == "extern" || w == "volatile";
-    };
+// theme Token.Text foreground for the line-numbers blend (None -> default).
+inline Color theme_text_color(const pg::PgTheme* th, const Color& theme_bg) {
+    const Style s = theme_token_style(th, theme_bg, "Text");
+    return s.color.type == Color::Type::None ? Color::dflt() : s.color;
+}
 
-    const size_t n = code.size();
-    size_t i = 0;
-    while (i < n) {
-        const char c = code[i];
-        if (is_space_tab(c) || c == '\n') {
-            size_t j = i;
-            while (j < n && (is_space_tab(code[j]) || code[j] == '\n'))
-                ++j;
-            push(Tok::Whitespace, i, j);
-            i = j;
-            continue;
-        }
-        if (c == '/' && i + 1 < n && code[i + 1] == '/') {
-            size_t j = i + 2;
-            while (j < n && code[j] != '\n')
-                ++j;
-            if (j < n)
-                ++j; // include the newline, like pygments
-            push(Tok::Comment, i, j);
-            i = j;
-            continue;
-        }
-        if (c == '/' && i + 1 < n && code[i + 1] == '*') {
-            size_t j = code.find("*/", i + 2);
-            j = (j == std::string_view::npos) ? n : j + 2;
-            push(Tok::Comment, i, j);
-            i = j;
-            continue;
-        }
-        if (is_ident_start(c)) {
-            size_t j = i;
-            while (j < n && is_ident_char(code[j]))
-                ++j;
-            const std::string_view w = code.substr(i, j - i);
-            if (kw_type(w))
-                push(Tok::Keyword, i, j); // Keyword.Type -> Keyword in monokai
-            else if (kw_ctrl(w))
-                push(Tok::Keyword, i, j);
-            else {
-                size_t k = j;
-                while (k < n && is_space_tab(code[k]))
-                    ++k;
-                push(k < n && code[k] == '(' ? Tok::NameFunc : Tok::Name, i, j);
-            }
-            i = j;
-            continue;
-        }
-        if (c >= '0' && c <= '9') {
-            size_t j = i;
-            while (j < n && isxdigit(static_cast<unsigned char>(code[j])))
-                ++j;
-            while (j < n && (code[j] == '.' || code[j] == 'f' || code[j] == 'F' ||
-                             code[j] == 'l' || code[j] == 'L' || code[j] == 'u' ||
-                             code[j] == 'U')) {
-                if (code[j] == '.' && (j + 1 >= n || !isdigit(static_cast<unsigned char>(code[j + 1]))))
-                    break;
-                ++j;
-            }
-            push(Tok::Number, i, j);
-            i = j;
-            continue;
-        }
-        if (c == '"' || c == '\'') {
-            const char q = c;
-            size_t j = i + 1;
-            while (j < n && code[j] != q) {
-                if (code[j] == '\\')
-                    ++j;
-                ++j;
-            }
-            if (j < n)
-                ++j;
-            push(Tok::String, i, j);
-            i = j;
-            continue;
-        }
-        if (c == '+' || c == '-' || c == '*' || c == '/' || c == '%' || c == '<' ||
-            c == '>' || c == '=' || c == '!' || c == '&' || c == '|' || c == '^' ||
-            c == '~' || c == '?') {
-            push(Tok::Operator, i, i + 1);
-            ++i;
-            continue;
-        }
-        if (c == '(' || c == ')' || c == '[' || c == ']' || c == '{' || c == '}' ||
-            c == ';' || c == ',' || c == ':' || c == '.') {
-            push(Tok::Punctuation, i, i + 1);
-            ++i;
-            continue;
-        }
-        push(Tok::Text, i, i + 1);
-        ++i;
+// rich.color.blend_rgb: int(r1 + (r2 - r1) * cross_fade) per channel
+// (double arithmetic, truncate).
+inline Color blend_number_color(const Color& bg, const Color& fg,
+                                double cross_fade) {
+    auto chan = [](uint8_t r1, uint8_t r2, double t) -> uint8_t {
+        double v = double(r1) + (double(r2) - double(r1)) * t;
+        return uint8_t(int(v));
+    };
+    return Color::rgb(chan(bg.r, fg.r, cross_fade), chan(bg.g, fg.g, cross_fade),
+                      chan(bg.b, fg.b, cross_fade));
+}
+
+// rich Syntax._get_number_styles.
+inline std::tuple<Style, Style, Style> number_styles(
+    const Console& c, const pg::PgTheme* th, const Color& theme_bg,
+    const Color& base_bg) {
+    Style background_style;
+    background_style.bg_color = base_bg;
+    const auto cs = c.active_color_system();
+    if (!cs.has_value() || *cs == ColorSystem::Standard) {
+        Style dim;
+        dim.dim = true;
+        dim.explicit_bits = 0x0002;
+        Style dim_off; // Style(dim=False) — SGR-equivalent to Style()
+        dim_off.explicit_bits = 0x0002;
+        return {background_style, background_style + dim,
+                background_style + dim_off};
     }
-    return out;
+    // 256 / truecolor
+    Style text_style = theme_token_style(th, theme_bg, "Text");
+    const Color bg_fg = theme_text_color(th, theme_bg);
+    Style number_style = background_style + text_style;
+    number_style.color = blend_number_color(base_bg, bg_fg, 0.3);
+    Style hl = background_style + text_style;
+    hl.color = blend_number_color(base_bg, bg_fg, 0.9);
+    hl.bold = true;
+    hl.explicit_bits |= 0x0001;
+    return {background_style, number_style, hl};
 }
 
-// ── json lexer ───────────────────────────────────────────────────────────────
-// pygments JsonLexer shape: strings -> String, numbers -> Number,
-// true/false/null -> Keyword, braces/separators -> Punctuation, ws -> Whitespace.
-inline std::vector<Token> lex_json(std::string_view code) {
-    std::vector<Token> out;
-    auto push = [&](Tok k, size_t a, size_t b) {
-        if (b > a)
-            out.push_back({k, std::string(code.substr(a, b - a))});
-    };
-    const size_t n = code.size();
-    size_t i = 0;
-    while (i < n) {
-        const char c = code[i];
-        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
-            size_t j = i;
-            while (j < n && (code[j] == ' ' || code[j] == '\t' || code[j] == '\n' ||
-                             code[j] == '\r'))
-                ++j;
-            push(Tok::Whitespace, i, j);
-            i = j;
-            continue;
-        }
-        if (c == '"') {
-            size_t j = i + 1;
-            while (j < n && code[j] != '"') {
-                if (code[j] == '\\')
-                    ++j;
-                ++j;
-            }
-            if (j < n)
-                ++j;
-            push(Tok::String, i, j);
-            i = j;
-            continue;
-        }
-        if (c == '-' || (c >= '0' && c <= '9')) {
-            size_t j = i;
-            if (code[j] == '-')
-                ++j;
-            while (j < n && isdigit(static_cast<unsigned char>(code[j])))
-                ++j;
-            if (j < n && code[j] == '.') {
-                ++j;
-                while (j < n && isdigit(static_cast<unsigned char>(code[j])))
-                    ++j;
-            }
-            if (j < n && (code[j] == 'e' || code[j] == 'E')) {
-                ++j;
-                if (j < n && (code[j] == '+' || code[j] == '-'))
-                    ++j;
-                while (j < n && isdigit(static_cast<unsigned char>(code[j])))
-                    ++j;
-            }
-            push(Tok::Number, i, j);
-            i = j;
-            continue;
-        }
-        if (is_ident_start(c)) {
-            size_t j = i;
-            while (j < n && is_ident_char(code[j]))
-                ++j;
-            const std::string_view w = code.substr(i, j - i);
-            push(w == "true" || w == "false" || w == "null" ? Tok::Keyword : Tok::Text, i, j);
-            i = j;
-            continue;
-        }
-        if (c == '{' || c == '}' || c == '[' || c == ']' || c == ',' || c == ':') {
-            push(Tok::Punctuation, i, i + 1);
-            ++i;
-            continue;
-        }
-        push(Tok::Text, i, i + 1);
-        ++i;
-    }
-    return out;
-}
+// ── line layout ─────────────────────────────────────────────────────────────
+// (crop_pad / wrap_line / cells_of: unchanged from the pre-pygments port —
+// pure cell arithmetic on segment streams)
 
-// plain text (pygments "text" lexer): one Token.Text for the whole input
-inline std::vector<Token> lex_text(std::string_view code) {
-    return {{Tok::Text, std::string(code)}};
-}
-
-inline std::vector<Token> lex(std::string_view code, std::string_view name) {
-    if (name == "python" || name == "py" || name == "python3")
-        return lex_python(code);
-    if (name == "cpp" || name == "c++" || name == "c")
-        return lex_cpp(code);
-    if (name == "json")
-        return lex_json(code);
-    return lex_text(code);
-}
-
-// ── layout helpers ───────────────────────────────────────────────────────────
 inline size_t cells_of(const std::vector<Segment>& segs) {
-    size_t w = 0;
+    size_t n = 0;
     for (const auto& s : segs)
-        w += unicode::string_cell_len(s.text);
-    return w;
+        n += unicode::string_cell_len(s.text);
+    return n;
 }
 
-// Segment.adjust_line_length: keep cells while < width, crop the straddling
-// segment to exactly width, pad the remainder with pad_style, stop.
 inline std::vector<Segment> crop_pad(const std::vector<Segment>& line, size_t width,
                                      const Style& pad_style) {
     std::vector<Segment> out;
@@ -753,10 +357,17 @@ inline std::vector<std::vector<Segment>> wrap_line(const std::vector<Segment>& l
 // ── the renderable ───────────────────────────────────────────────────────────
 inline std::vector<rich::Segment> Syntax::render(const rich::Console& c,
                                                  const rich::Options& opt) const {
-    using detail::Tok;
     const SyntaxOptions& o = opts;
     const size_t width = (opt.width > 0) ? opt.width : 80;
     const bool legacy = c.legacy_windows();
+
+    // theme + base styles
+    const pg::PgTheme* th = pg::pg_find_theme(theme.c_str());
+    if (!th)
+        th = pg::pg_find_theme("default");
+    const Color theme_bg = detail::hex_color(th->background, Color::rgb(0, 0, 0));
+    const Color base_bg = o.background_color ? *o.background_color : theme_bg;
+    const Style bg_style{.bg_color = base_bg};
 
     // 1. _process_code: trailing newline, dedent, expandtabs
     std::string code = this->code;
@@ -764,15 +375,17 @@ inline std::vector<rich::Segment> Syntax::render(const rich::Console& c,
     if (!ends_on_nl)
         code += '\n';
     if (o.dedent) {
+        // textwrap.dedent parity: whitespace-only lines normalize to empty
+        // (before and after margin stripping); margin = min leading-space/tabs
+        // over non-blank lines, stripped character-wise.
         size_t common = 0;
-        const size_t first_line = code.find('\n');
         bool first = true;
         size_t line_start = 0;
         while (line_start < code.size()) {
             size_t line_end = code.find('\n', line_start);
             if (line_end == std::string::npos)
                 line_end = code.size();
-            std::string_view ln = code.substr(line_start, line_end - line_start);
+            const std::string_view ln(code.data() + line_start, line_end - line_start);
             if (!ln.empty() && ln.find_first_not_of(" \t") != std::string_view::npos) {
                 size_t indent = 0;
                 while (indent < ln.size() && (ln[indent] == ' ' || ln[indent] == '\t'))
@@ -791,11 +404,11 @@ inline std::vector<rich::Segment> Syntax::render(const rich::Console& c,
             size_t line_end = code.find('\n', line_start);
             if (line_end == std::string::npos)
                 line_end = code.size();
-            std::string_view ln = code.substr(line_start, line_end - line_start);
-            if (ln.empty() || ln.find_first_not_of(" \t") == std::string_view::npos)
-                dedented += '\n';
-            else
+            const std::string_view ln(code.data() + line_start, line_end - line_start);
+            if (!ln.empty() && ln.find_first_not_of(" \t") != std::string_view::npos)
                 dedented += ln.substr(std::min(common, ln.size()));
+            // blank/whitespace-only lines contribute nothing (Python
+            // normalizes them to empty before stripping)
             if (line_end < code.size())
                 dedented += '\n';
             line_start = line_end + 1;
@@ -822,19 +435,39 @@ inline std::vector<rich::Segment> Syntax::render(const rich::Console& c,
         code = std::move(expanded);
     }
 
-    // 2. lex + 3. build per-line segment streams (split on \n)
-    std::vector<detail::Token> toks = detail::lex(code, lexer);
+    // 2. lex (pygments engine) + 3. build per-line segment streams (split on
+    //    \n). Unknown lexer name -> plain text (rich: lexer property None).
+    pg::PgText pt;
+    pt.decode(code.data(), code.size());
+    const pg::PgView view = pg::PgView::of(pt);
+    std::vector<pg::detail::PgTok> toks;
+    if (lexer.empty())
+        toks.push_back({0, pt.size(), "Text"});
+    else if (pg::detail::pg_lex_is_json(lexer))
+        pg::detail::pg_lex_json(view, toks);
+    else {
+        const pg::PgLexer* lx = pg::detail::pg_find_lexer_ci(lexer);
+        if (lx)
+            pg::detail::pg_lex_into(lx, view, nullptr, toks);
+        else
+            toks.push_back({0, pt.size(), "Text"});
+    }
     std::vector<std::vector<Segment>> lines;
     std::vector<Segment> cur;
     for (const auto& t : toks) {
-        const Style st = detail::token_style(t.kind);
+        Style st = detail::theme_token_style(th, theme_bg, t.token.c_str());
+        // Python: text.stylize(f"on {background_color}") after tokenization —
+        // overrides the background of every token span.
+        if (o.background_color)
+            st.bg_color = *o.background_color;
+        const std::string bytes = pt.bytes(t.start, t.end);
         size_t a = 0;
-        for (size_t b = 0; b <= t.text.size(); ++b) {
-            if (b == t.text.size() || t.text[b] == '\n') {
+        for (size_t b = 0; b <= bytes.size(); ++b) {
+            if (b == bytes.size() || bytes[b] == '\n') {
                 if (b > a)
-                    cur.push_back({t.text.substr(a, b - a), st});
+                    cur.push_back({bytes.substr(a, b - a), st});
                 a = b + 1;
-                if (b < t.text.size()) {
+                if (b < bytes.size()) {
                     lines.push_back(std::move(cur));
                     cur.clear();
                 }
@@ -858,14 +491,15 @@ inline std::vector<rich::Segment> Syntax::render(const rich::Console& c,
 
     // 5. indent guides (with_indent_guides: per tab_size block -> │+spaces;
     //    blank lines are deferred and re-emitted with the following line's
-    //    indent, or empty at the end)
+    //    indent, or empty at the end). Complex-path style: base + theme
+    //    Comment + dim + user bg, then italic=False forced.
     if (o.indent_guides && o.tab_size > 0) {
-        const Style guide{
-            .dim = true,
-            .color = Color::rgb(0x95, 0x90, 0x77),
-            .bg_color = detail::mono_bg(),
-            .explicit_bits = 0x01 | 0x04 | 0x08,
-        };
+        Style guide = bg_style + detail::theme_token_style(th, theme_bg, "Comment");
+        guide.dim = true;
+        guide.explicit_bits |= 0x0002; // dim explicit
+        // + Style(italic=False): drop any theme italic
+        guide.italic = false;
+        guide.explicit_bits &= ~0x0004;
         std::vector<std::vector<Segment>> next;
         size_t blank = 0;
         for (auto& line : lines) {
@@ -891,7 +525,9 @@ inline std::vector<rich::Segment> Syntax::render(const rich::Console& c,
                 next.push_back({{new_indent, guide}});
             blank = 0;
             std::vector<Segment> nline;
-            nline.push_back({new_indent, guide});
+            // zero-length indent: Python stylizes (0, 0) — a no-op, no span
+            if (!new_indent.empty())
+                nline.push_back({new_indent, guide});
             size_t skip = indent;
             for (auto& seg : line) {
                 if (skip >= seg.text.size()) {
@@ -935,9 +571,8 @@ inline std::vector<rich::Segment> Syntax::render(const rich::Console& c,
             std::max<size_t>(0, inner_width - (o.line_numbers ? col_width + 1 : 0));
 
     // 7. per-line layout
-    const Style bg_style{.bg_color = detail::mono_bg()};
-    const Style number_style{.dim = true, .bg_color = detail::mono_bg()};
-    const Style hl_number_style{.bg_color = detail::mono_bg(), .explicit_bits = 0x02};
+    const auto [number_bg, number_style, hl_number_style] =
+        detail::number_styles(c, th, theme_bg, base_bg);
     const Style pointer_style{.color = Color::from_ansi(31)}; // red
     const std::string pointer = legacy ? "> " : "\xE2\x9D\xB1 "; // ❱
     std::vector<Segment> out;
@@ -969,7 +604,7 @@ inline std::vector<rich::Segment> Syntax::render(const rich::Console& c,
                         out.push_back({col, number_style});
                     }
                 } else {
-                    out.push_back({std::string(col_width, ' ') + " ", bg_style});
+                    out.push_back({std::string(col_width, ' ') + " ", number_bg});
                 }
                 for (auto& seg : wrapped[w])
                     out.push_back(std::move(seg));
@@ -1066,7 +701,7 @@ namespace rich::highlight {
 // console.print(rich::highlight::syntax(code, "python", opts))
 inline rich::AnyRenderable syntax(std::string_view code, std::string_view lexer,
                                   SyntaxOptions opts = {}) {
-    Syntax s{std::string(code), std::string(lexer), opts};
+    Syntax s{std::string(code), std::string(lexer), "monokai", opts};
     return rich::AnyRenderable(std::move(s));
 }
 

@@ -61,6 +61,7 @@ TEST_CASES = [
     "spinner_registry",
     "live_extras",
     "pretty_sgr",
+    "syntax_extras",
 ]
 
 import os
