@@ -1960,6 +1960,50 @@ std::string canon_tag_name(std::string_view tag) {
 }
 } // namespace
 
+// rich.markup.escape — faithful port of the rich 15.0.0 implementation:
+//   re.sub(r"(\\*)(\[[a-z#/@][^[]*?\])", lambda m: m[1]*2 + "\\" + m[2], s)
+//   if s.endswith("\\") and not s.endswith("\\\\"): s += "\\"
+// A match is a run of 0+ backslashes directly before a "[..." bracket
+// group whose first character starts a markup tag (a-z, '#', '/', '@')
+// and which is closed by the leftmost ']' before any '['; the run is
+// emitted twice (2n+1 backslashes in total) with the bracket group after
+// it. Brackets that cannot open a tag (e.g. "[]", "[123]", "[ABC]") are
+// left untouched. The trailing rule fires only for EXACTLY one trailing
+// backslash (endswith("\\") && !endswith("\\\\")).
+std::string markup_escape(std::string_view sv) {
+    auto is_tag_first = [](char c) {
+        return (c >= 'a' && c <= 'z') || c == '#' || c == '/' || c == '@';
+    };
+    std::string out;
+    out.reserve(sv.size());
+    size_t i = 0;
+    while (i < sv.size()) {
+        if (sv[i] == '[' && i + 1 < sv.size() && is_tag_first(sv[i + 1])) {
+            // Group 2: first char + lazy non-'[' run + ']'.
+            size_t j = i + 2;
+            while (j < sv.size() && sv[j] != '[' && sv[j] != ']') ++j;
+            if (j < sv.size() && sv[j] == ']') {
+                // Group 1: the maximal backslash run directly before the
+                // match. It was already emitted once while scanning; the
+                // replacement (group1*2 + '\\') adds one more copy + '\\'.
+                size_t k = i;
+                while (k > 0 && sv[k - 1] == '\\') --k;
+                out.append(sv.substr(k, i - k));
+                out += '\\';
+                out.append(sv.substr(i, j + 1 - i));
+                i = j + 1;
+                continue;
+            }
+        }
+        out += sv[i++];
+    }
+    // Trailing-backslash rule: exactly one trailing backslash gains one.
+    if (!out.empty() && out.back() == '\\' &&
+        (out.size() == 1 || out[out.size() - 2] != '\\'))
+        out += '\\';
+    return out;
+}
+
 std::vector<Segment> parse_markup(std::string_view sv) {
     struct Frame { Style style; std::string name; };
     std::vector<Segment> segments;

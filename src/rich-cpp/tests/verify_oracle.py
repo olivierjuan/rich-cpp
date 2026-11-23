@@ -65,6 +65,7 @@ TEST_CASES = [
     "pretty_sgr",
     "syntax_extras",
     "number_extras",
+    "markup_escape",
 ]
 
 import os

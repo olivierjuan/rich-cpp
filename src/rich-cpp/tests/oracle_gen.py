@@ -1123,6 +1123,17 @@ def generate_python_oracle(test_name: str) -> str:
             unit, suffix = pick_unit_and_suffix(s, suf, 1000)
             out.append(f"{unit} {suffix}")
         return "\n".join(out) + "\n"
+    elif test_name == "markup_escape":
+        # rich.markup.escape — escapes tag-like bracket groups (first char
+        # a-z/#//@, closed before any '['), doubling backslash runs that
+        # directly precede them; bare '[]' and uppercase tags are left.
+        from rich.markup import escape
+        samples = ["[bold]text[/]", "a [b] c", "nested [x] [y] z]", "[]",
+                   "[]]", "[/]", "\\[already", "no brackets", "[a/b/c]",
+                   "mix [ok] [bad] and [x]", "[ABC]", "[#tag]", "[@x]",
+                   "[123]", "a*[b] c", "**[x]", "[/x] y[/z]", "\\[/]",
+                   "\\\\[/]", "[a[b]", "[ab]cd]", "end\\"]
+        return "".join(escape(s) + "\n" for s in samples)
     return c.export_text()
 
 def main():

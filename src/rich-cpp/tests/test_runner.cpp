@@ -1633,6 +1633,17 @@ int main(int argc, char* argv[]) {
                       << "\n";
         }
         return 0;
+    } else if (test_name == "markup_escape") {
+        // rich.markup.escape — plain text lines, mirrors oracle_gen.
+        const char* samples[] = {"[bold]text[/]", "a [b] c",
+                                 "nested [x] [y] z]", "[]", "[]]", "[/]",
+                                 "\\[already", "no brackets", "[a/b/c]",
+                                 "mix [ok] [bad] and [x]", "[ABC]", "[#tag]",
+                                 "[@x]", "[123]", "a*[b] c", "**[x]",
+                                 "[/x] y[/z]", "\\[/]", "\\\\[/]", "[a[b]",
+                                 "[ab]cd]", "end\\"};
+        for (const char* s : samples) std::cout << rich::markup_escape(s) << "\n";
+        return 0;
     } else {
         std::cerr << "Unknown test: " << test_name << "\n";
         return 1;

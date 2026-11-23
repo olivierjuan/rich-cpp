@@ -650,6 +650,9 @@ struct StyledText {
     std::string content;
 };
 RICH_EXPORT std::vector<Segment> parse_markup(std::string_view sv);
+// Python rich.markup.escape: escape literal "[" so text survives markup
+// parsing ("a [b]" -> "a \\[b]"; a bare "]" never opens a tag).
+RICH_EXPORT std::string markup_escape(std::string_view sv);
 // Emoji shortcode replacement (":smile:" -> UTF-8 emoji), Python Rich
 // _emoji_replace parity. Defined in rich_core.cpp on top of the generated
 // EmojiTable.h (kept out of this header for compile times).
