@@ -153,8 +153,18 @@ public:
             }
         }
 
-        rich::Style border_style{.dim = true, .color = rich::Color::from_ansi(90)};
-        rich::Style header_style{.bold = true, .color = rich::Color::from_ansi(97)};
+        // Python table.py: table_style = console.get_style(style or ""),
+        // border_style = table_style + console.get_style(border_style or
+        // ""), header_style = console.get_style("table.header" or "").
+        // The C++ Table API has no style/border_style parameters (both
+        // default None in Python), so the border is console.get_style("") —
+        // a theme lookup for "" that parses to the null style when absent
+        // (plain border). Rich 15.0.0 default_styles: "table.header" and
+        // "table.footer" are Style(bold=True), no color. (Previously
+        // hardcoded to bright-black border / bright-white header.)
+        auto border_style = con.get_style("", "");
+        auto header_style = con.get_style("table.header", "");
+        auto footer_style = con.get_style("table.footer", "");
 
         // Python get_row widths span the whole column incl. padding; the
         // head/row/foot glyph sets are identical in every standard box, so
@@ -176,7 +186,7 @@ public:
         }
         out.push_back({std::move(top), border_style});
 
-        // Header row (style = hardcoded header style, no row style)
+        // Header row (table.header style, no row style)
         {
             for (size_t i = 0; i < cols_.size(); ++i) {
                 out.push_back({std::string(i == 0 ? bx.mid_left : bx.mid_vertical), border_style});
@@ -246,7 +256,8 @@ public:
                 row_line(true);
         }
 
-        // Footer (Python: foot line + footer row, footer style like header)
+        // Footer (Python: foot line + footer row, table.footer style —
+        // bold by default, separately overridable in a theme)
         if (show_footer) {
             row_line(true);
             for (size_t i = 0; i < cols_.size(); ++i) {
@@ -257,19 +268,19 @@ public:
                 size_t inner_w = (col_widths[i] >= 2) ? (col_widths[i] - 2) : 0;
                 size_t pad_diff = (inner_w > text_len) ? (inner_w - text_len) : 0;
                 if (cols_[i].justify == Justify::Right) {
-                    out.push_back({" " + std::string(pad_diff, ' '), header_style});
-                    for (auto& s : segs) out.push_back({std::move(s.text), header_style});
-                    out.push_back({" ", header_style});
+                    out.push_back({" " + std::string(pad_diff, ' '), footer_style});
+                    for (auto& s : segs) out.push_back({std::move(s.text), footer_style});
+                    out.push_back({" ", footer_style});
                 } else if (cols_[i].justify == Justify::Center) {
                     size_t left_pad = pad_diff / 2;
                     size_t right_pad = pad_diff - left_pad;
-                    out.push_back({" " + std::string(left_pad, ' '), header_style});
-                    for (auto& s : segs) out.push_back({std::move(s.text), header_style});
-                    out.push_back({std::string(right_pad, ' ') + " ", header_style});
+                    out.push_back({" " + std::string(left_pad, ' '), footer_style});
+                    for (auto& s : segs) out.push_back({std::move(s.text), footer_style});
+                    out.push_back({std::string(right_pad, ' ') + " ", footer_style});
                 } else {
-                    out.push_back({" ", header_style});
-                    for (auto& s : segs) out.push_back({std::move(s.text), header_style});
-                    out.push_back({std::string(pad_diff, ' ') + " ", header_style});
+                    out.push_back({" ", footer_style});
+                    for (auto& s : segs) out.push_back({std::move(s.text), footer_style});
+                    out.push_back({std::string(pad_diff, ' ') + " ", footer_style});
                 }
             }
             out.push_back({std::string(bx.mid_right) + "\n", border_style});
