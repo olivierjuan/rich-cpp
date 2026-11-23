@@ -28,6 +28,56 @@ inline const std::vector<std::pair<std::string, std::pair<int, std::string>>>& s
     return table;
 }
 
+// Python rich.spinner.Spinner: frames + interval from the registry, speed
+// factor, and time-based frame selection. `frame_at(time)` mirrors
+// Spinner.render(time): the first call fixes start_time, then
+// frame = frames[int((t - t0) * speed / (interval_ms / 1000)) % len].
+// Unknown spinner names yield an empty frame table (render returns "").
+class Spinner {
+public:
+    Spinner(std::string name = "dots", std::string style = "progress.spinner",
+            double speed = 1.0)
+        : style_(std::move(style)), speed_(speed) {
+        for (const auto& [n, spec] : spinner_table()) {
+            if (n == name) {
+                interval_ms_ = spec.first;
+                const std::string& frames = spec.second;
+                // Frames are single codepoints; split on UTF-8 boundaries.
+                size_t i = 0;
+                while (i < frames.size()) {
+                    size_t len = 1;
+                    const unsigned char c = static_cast<unsigned char>(frames[i]);
+                    if (c >= 0xF0) len = 4;
+                    else if (c >= 0xE0) len = 3;
+                    else if (c >= 0xC0) len = 2;
+                    frames_.push_back(frames.substr(i, len));
+                    i += len;
+                }
+                break;
+            }
+        }
+    }
+
+    // Deterministic frame for a given clock value (seconds).
+    std::string frame_at(double time) const {
+        if (frames_.empty()) return "";
+        const double t0 = (start_time_ < 0.0) ? time : start_time_;
+        if (start_time_ < 0.0) start_time_ = t0;
+        const double frame_no = ((time - t0) * speed_) / (interval_ms_ / 1000.0);
+        const long long idx = static_cast<long long>(frame_no);
+        return frames_[(idx >= 0 ? idx : 0) % frames_.size()];
+    }
+
+    const std::string& style() const { return style_; }
+
+private:
+    std::vector<std::string> frames_;
+    double interval_ms_{80.0};
+    std::string style_;
+    double speed_{1.0};
+    mutable double start_time_{-1.0};
+};
+
 // Status: single-line spinner + description widget.
 //
 // Static rendering (renderable interface): emits exactly one line

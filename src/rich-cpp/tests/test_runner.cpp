@@ -19,6 +19,7 @@
 #include <Pretty.h>
 #include <json/Json.h>
 #include <ProgressBar.h>
+#include <Progress.h>
 #include <highlight/Syntax.h>
 #include <markdown/Markdown.h>
 #include <iostream>
@@ -1117,6 +1118,126 @@ int main(int argc, char* argv[]) {
             styled.push_back(rich::AnyRenderable(
                 rich::Text{std::string("cccccccc"), tc.get_style("cyan")}));
             tc.print(rich::AnyRenderable(rich::decorator::Columns(std::move(styled))));
+        }
+        std::cout << t_oss.str();
+        return 0;
+    } else if (test_name == "progress_extras") {
+        // Progress custom columns + pulse + transfer mode — mirrors the
+        // Python oracle: record console, explicit no_color=false (pulse
+        // renders all-bar segments), frozen clocks.
+        std::ostringstream t_oss;
+        auto render_prog = [&](const rich::progress::Progress& p, double now) {
+            rich::ConsoleOptions o{.width = 60, .height = 25, .record = true,
+                                   .legacy_windows = false, .no_color = false};
+            std::ostringstream pc_oss;
+            rich::Console pc(pc_oss, o);
+            auto segs = p.render(pc, rich::Options{.width = 60}, now);
+            for (auto& s : segs) t_oss << s.text;
+        };
+
+        // (a) default columns, frozen clock: single sample -> no speed/ETA.
+        {
+            rich::progress::Progress p;
+            int t1 = p.add_task("Downloading", 100, 0, true, true, 100.0);
+            int t2 = p.add_task("Processing", 200, 0, true, true, 100.0);
+            rich::progress::Progress::Update u;
+            u.completed = 42;
+            p.update(t1, u, 100.0);
+            u.completed = 137;
+            p.update(t2, u, 100.0);
+            render_prog(p, 100.0);
+        }
+
+        // (b) rolling speed: samples (105, 42), (110, 42) -> 8.4 it/s ->
+        // ETA ceil(16 / 8.4) = 2 -> "0:00:02".
+        {
+            rich::progress::Progress p;
+            int t1 = p.add_task("Downloading", 100, 0, true, true, 100.0);
+            int t2 = p.add_task("Processing", 200, 0, true, true, 100.0);
+            rich::progress::Progress::Update u;
+            u.completed = 42;
+            p.update(t1, u, 105.0);
+            u.completed = 137;
+            p.update(t2, u, 105.0);
+            u.completed = 84;
+            p.update(t1, u, 110.0);
+            render_prog(p, 110.0);
+        }
+
+        // (c) pulse: unstarted task + total=None task.
+        {
+            rich::progress::Progress p;
+            int t1 = p.add_task("Waiting", std::nullopt, 0, true, false, 3.5);
+            int t2 = p.add_task("Started", 50, 0, true, true, 0.0);
+            rich::progress::Progress::Update u;
+            u.completed = 10;
+            p.update(t2, u, 0.0);
+            render_prog(p, 3.5);
+        }
+
+        // (d) transfer columns.
+        {
+            std::vector<rich::progress::Progress::AnyColumn> cols = {
+                rich::progress::Progress::AnyColumn::of(
+                    std::make_shared<rich::progress::SpinnerColumn>(
+                        rich::progress::SpinnerColumn())),
+                rich::progress::Progress::AnyColumn::of(
+                    std::make_shared<rich::progress::TextColumn>(
+                        rich::progress::TextColumn(
+                            "[progress.description]{task.description}"))),
+                rich::progress::Progress::AnyColumn::of(
+                    std::make_shared<rich::progress::BarColumn>(
+                        rich::progress::BarColumn())),
+                rich::progress::Progress::AnyColumn::of(
+                    std::make_shared<rich::progress::TaskProgressColumn>(
+                        rich::progress::TaskProgressColumn())),
+                rich::progress::Progress::AnyColumn::of(
+                    std::make_shared<rich::progress::FileSizeColumn>(
+                        rich::progress::FileSizeColumn())),
+                rich::progress::Progress::AnyColumn::of(
+                    std::make_shared<rich::progress::TransferSpeedColumn>(
+                        rich::progress::TransferSpeedColumn())),
+                rich::progress::Progress::AnyColumn::of(
+                    std::make_shared<rich::progress::TimeRemainingColumn>(
+                        rich::progress::TimeRemainingColumn())),
+            };
+            rich::progress::Progress p(cols, false, 30.0);
+            int t = p.add_task("Downloading file", 1500000, 0, true, true, 0.0);
+            rich::progress::Progress::Update u;
+            u.completed = 750000;
+            p.update(t, u, 60.0);
+            render_prog(p, 60.0);
+        }
+
+        // (e) str column + elapsed + total filesize + MofN + download +
+        // compact elapsed-when-finished ETA; expand=True.
+        {
+            std::vector<rich::progress::Progress::AnyColumn> cols = {
+                rich::progress::Progress::AnyColumn::of_text("{task.description}"),
+                rich::progress::Progress::AnyColumn::of(
+                    std::make_shared<rich::progress::TimeElapsedColumn>(
+                        rich::progress::TimeElapsedColumn())),
+                rich::progress::Progress::AnyColumn::of(
+                    std::make_shared<rich::progress::TotalFileSizeColumn>(
+                        rich::progress::TotalFileSizeColumn())),
+                rich::progress::Progress::AnyColumn::of(
+                    std::make_shared<rich::progress::MofNCompleteColumn>(
+                        rich::progress::MofNCompleteColumn())),
+                rich::progress::Progress::AnyColumn::of(
+                    std::make_shared<rich::progress::DownloadColumn>(
+                        rich::progress::DownloadColumn())),
+                rich::progress::Progress::AnyColumn::of(
+                    std::make_shared<rich::progress::TimeRemainingColumn>(
+                        rich::progress::TimeRemainingColumn(true, true))),
+            };
+            rich::progress::Progress p(cols, true, 30.0);
+            int t1 = p.add_task("Copy", 2500000, 0, true, true, 0.0);
+            int t2 = p.add_task("Done", 8, 0, true, true, 0.0);
+            rich::progress::Progress::Update u;
+            u.completed = 1250000;
+            p.update(t1, u, 30.0);
+            p.advance(t2, 8, 30.0);
+            render_prog(p, 30.0);
         }
         std::cout << t_oss.str();
         return 0;

@@ -754,6 +754,105 @@ def generate_python_oracle(test_name: str) -> str:
                          Text("bb", style="bold green"),
                          Text("cccccccc", style="cyan")]))
         return sink.getvalue()
+    elif test_name == "progress_extras":
+        # Progress custom columns + pulse + transfer mode. Frozen clocks keep
+        # every value deterministic: spinner frame 0, pulse offset fixed,
+        # speed samples exact. no_color=False is explicit so the pulse renders
+        # all-bar segments (Python: color_system None + no_color False ->
+        # " " if no_color else bar => bars on both halves).
+        from rich.progress import (
+            Progress,
+            SpinnerColumn,
+            TextColumn,
+            BarColumn,
+            TaskProgressColumn,
+            TimeElapsedColumn,
+            TimeRemainingColumn,
+            FileSizeColumn,
+            TotalFileSizeColumn,
+            MofNCompleteColumn,
+            DownloadColumn,
+            TransferSpeedColumn,
+        )
+        pc = Console(file=io.StringIO(), width=60, record=True,
+                     legacy_windows=False, no_color=False)
+
+        # (a) default columns, frozen clock: no speed/ETA under one sample.
+        clock = [100.0]
+        prog = Progress(console=pc, auto_refresh=False, get_time=lambda: clock[0])
+        t1 = prog.add_task("Downloading", total=100)
+        t2 = prog.add_task("Processing", total=200)
+        with prog:
+            prog.update(t1, completed=42)
+            prog.update(t2, completed=137)
+
+        # (b) rolling speed: samples (105, 42), (110, 42) -> 8.4 it/s ->
+        # ETA ceil(16 / 8.4) = 2 -> "0:00:02".
+        clock = [100.0]
+        prog = Progress(console=pc, auto_refresh=False, get_time=lambda: clock[0])
+        t1 = prog.add_task("Downloading", total=100)
+        t2 = prog.add_task("Processing", total=200)
+        with prog:
+            clock[0] = 105.0
+            prog.update(t1, completed=42)
+            prog.update(t2, completed=137)
+            clock[0] = 110.0
+            prog.update(t1, completed=84)
+
+        # (c) pulse: unstarted task (pulses until started) and total=None.
+        clock = [0.0]
+        prog = Progress(console=pc, auto_refresh=False, get_time=lambda: clock[0])
+        t1 = prog.add_task("Waiting", total=None, start=False)
+        t2 = prog.add_task("Started", total=50)
+        with prog:
+            prog.update(t2, completed=10)
+            clock[0] = 3.5
+
+        # (d) transfer columns: spinner + description + bar + percentage +
+        # filesize + transfer speed + ETA (single sample -> "?" speed,
+        # "-:--:--" ETA).
+        clock = [0.0]
+        prog = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            FileSizeColumn(),
+            TransferSpeedColumn(),
+            TimeRemainingColumn(),
+            console=pc,
+            auto_refresh=False,
+            get_time=lambda: clock[0],
+        )
+        t = prog.add_task("Downloading file", total=1500000)
+        with prog:
+            clock[0] = 60.0
+            prog.update(t, completed=750000)
+
+        # (e) remaining column types: str description column, elapsed, total
+        # filesize, M-of-N, download, compact ETA with elapsed-when-finished;
+        # expand=True. Task 2 finishes via advance (finished_time/speed set).
+        clock = [0.0]
+        prog = Progress(
+            "{task.description}",
+            TimeElapsedColumn(),
+            TotalFileSizeColumn(),
+            MofNCompleteColumn(),
+            DownloadColumn(),
+            TimeRemainingColumn(compact=True, elapsed_when_finished=True),
+            expand=True,
+            console=pc,
+            auto_refresh=False,
+            get_time=lambda: clock[0],
+        )
+        t1 = prog.add_task("Copy", total=2500000)
+        t2 = prog.add_task("Done", total=8)
+        with prog:
+            clock[0] = 30.0
+            prog.update(t1, completed=1250000)
+            prog.advance(t2, 8)
+
+        return pc.export_text()
     return c.export_text()
 
 def main():

@@ -678,11 +678,14 @@ inline std::vector<Segment> render_item(const StyledText& t, const Console&, con
     return out;
 }
 inline std::pair<size_t, size_t> measure_item(const StyledText& t, const Console&, const Options&) {
-    // Same measurement contract as Text (MarkupText delegates to it).
+    // Python Text.__rich_measure__ over the PLAIN content: markup tags carry
+    // no width, so parse first and measure the stripped text.
+    std::string plain;
+    for (auto& s : parse_markup(t.content)) plain += s.text;
     size_t max_line = 0, longest_word = 0;
     {
         std::string cur;
-        for (char c : t.content) {
+        for (char c : plain) {
             if (c == '\n') {
                 max_line = std::max(max_line, unicode::string_cell_len(cur));
                 cur.clear();
@@ -690,7 +693,7 @@ inline std::pair<size_t, size_t> measure_item(const StyledText& t, const Console
         }
         max_line = std::max(max_line, unicode::string_cell_len(cur));
     }
-    for (const auto& w : text::wrap_detail::words(t.content)) {
+    for (const auto& w : text::wrap_detail::words(plain)) {
         std::string_view core = w.text;
         while (!core.empty() && (core.back() == ' ' || core.back() == '\t'))
             core.remove_suffix(1);
